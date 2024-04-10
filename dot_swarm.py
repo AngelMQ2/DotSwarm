@@ -1,18 +1,18 @@
-
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 
 # Environmen hyperparam:
-ARENA_SIDE_LENGTH = 10
+ARENA_SIDE_LENGTH = 80
 STEPS             = 1000
 MAX_SPEED         = 5e-2
 BASE_SPEED        = 5e-3
 
 # Swarm hyperparameters:
 NUMBER_OF_ROBOTS  = 50
-NUMBER_OF_NEIGHTBORS = 4
+NUMBER_OF_NEIGHTBORS = 2
+NEIGHTBORS_SPACE = 20
 SAFE_SPACE = 0.5
 
 assert NUMBER_OF_ROBOTS >= NUMBER_OF_NEIGHTBORS
@@ -100,7 +100,7 @@ class SwarmNetwork():
         x_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
         y_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
 
-        # Velocities random
+        # Velocities random:
         vx = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(NUMBER_OF_ROBOTS,))
         vy = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(NUMBER_OF_ROBOTS,))
 
@@ -154,8 +154,13 @@ class SwarmNetwork():
             # Check distance to every other agent
             dist_neighbors = np.linalg.norm(agent.position() - state,axis=1)
             # Select closest agents:
-            neightbors_id = self.index[np.argsort(dist_neighbors)[1:NUMBER_OF_NEIGHTBORS+1]]
-            neightbors.append(neightbors_id.tolist())
+            sort_id = self.index[np.argsort(dist_neighbors)[1:]]
+            neightbors_id = []
+            for idx in sort_id:
+                if dist_neighbors[idx] < NEIGHTBORS_SPACE:
+                    neightbors_id.append(idx)
+
+            neightbors.append(neightbors_id)
 
         # Save list of agents as every agent neightbors:
         for i,agent in enumerate(self.agents):
