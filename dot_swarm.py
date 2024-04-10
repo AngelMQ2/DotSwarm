@@ -5,7 +5,7 @@ from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 
 # Environmen hyperparam:
-ARENA_SIDE_LENGTH = 10
+ARENA_SIDE_LENGTH = 15
 STEPS             = 1000
 MAX_SPEED         = 5e-2
 BASE_SPEED        = 5e-3
@@ -87,9 +87,48 @@ class agent:
         
         x_next = wrap(x + BASE_SPEED*delta_x)
         y_next = wrap(y + BASE_SPEED*delta_y)
+
+        self.set_position(x_next,y_next)
+        return x_next, y_next
+    
+    def dispersion(self,state):
+        # Difference position neightbors-agent
+        delta_x = 0
+        delta_y = 0
+        umbral=3
+
+        [x,y] = self.position()
+
+        dist=0
+        
+        # Control law:
+        for n in self.neightbors():
+            [n_x, n_y] = state[n.id]
+            dist=np.linalg.norm(self.position()-[n_x, n_y])
+            print(dist)
+            delta_x += (n_x - x)/dist
+            delta_y += (n_y - y)/dist
+
+        '''
+        #donut behavior
+        if dist>umbral:
+            x_next = wrap(x + BASE_SPEED*delta_x/len(self.neightbors()))
+            y_next = wrap(y + BASE_SPEED*delta_y/len(self.neightbors()))
+        else:
+            x_next = wrap(x - BASE_SPEED*delta_x/len(self.neightbors()))
+            y_next = wrap(y - BASE_SPEED*delta_y/len(self.neightbors()))
+        '''    
+
+        if dist>umbral:
+            x_next = wrap(x + BASE_SPEED*delta_x/len(self.neightbors()))
+            y_next = wrap(y + BASE_SPEED*delta_y/len(self.neightbors()))
+        else:
+            x_next = wrap(x - BASE_SPEED*delta_x/len(self.neightbors()))
+            y_next = wrap(y - BASE_SPEED*delta_y/len(self.neightbors()))
         
         self.set_position(x_next,y_next)
         return x_next, y_next
+    
     
     
     
@@ -133,6 +172,8 @@ class SwarmNetwork():
                 _x,_y = agent.forward()
             elif mode == "cluster":
                 _x,_y = agent.cluster(self.state())
+            elif mode == "dispersion":
+                _x,_y = agent.dispersion(self.state())
             else:   # Do nothing
                 _x,_y = agent.stop()
 
@@ -192,6 +233,8 @@ def toggle_mode(event):
         mode = "random"
     elif event.key == 'down':
         mode = "cluster"
+    elif event.key == 'right':
+        mode = "dispersion"
     elif event.key == ' ':
         if mode == "stop":
             mode = previous_mode
