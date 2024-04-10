@@ -90,6 +90,32 @@ class agent:
         
         self.set_position(x_next,y_next)
         return x_next, y_next
+
+    def homing(self, point = (5,5)):
+        delta_x = 0
+        delta_y = 0
+
+        [x,y] = self.position()
+        [p_x, p_y]  = point
+        delta_x += p_x - x
+        delta_y += p_y - y
+
+        distance_to_n = []
+        for n in self.N:
+            distance_to_n.append(np.linalg.norm(self.position() - n.position()))
+
+        ##print(distance_to_n)
+        '''if max(distance_to_n) < SAFE_SPACwE +0.1:
+            # move in circle
+            delat_x = -delat_y
+            delat_y = delat_x
+'''
+        
+        x_next = wrap(x + BASE_SPEED*delta_x)
+        y_next = wrap(y + BASE_SPEED*delta_y)
+        
+        self.set_position(x_next,y_next)
+        return x_next, y_next
     
     
     
