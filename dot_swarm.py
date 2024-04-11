@@ -2,9 +2,11 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
 from matplotlib.animation import FuncAnimation
+from map_dataset import MapDataset
 
 # Environmen hyperparam:
-ARENA_SIDE_LENGTH = 80
+ARENA_SIDE_LENGTH = 100
+BLOCK_SIZE        = 5
 STEPS             = 1000
 MAX_SPEED         = 5e-2
 BASE_SPEED        = 5e-3
@@ -12,8 +14,8 @@ BASE_SPEED        = 5e-3
 # Swarm hyperparameters:
 NUMBER_OF_ROBOTS  = 50
 NUMBER_OF_NEIGHTBORS = 2
-NEIGHTBORS_SPACE = 20
-SAFE_SPACE = 0.5
+NEIGHTBORS_SPACE = 100      # Radius of communication area
+SAFE_SPACE = 0.5            # Self safe-space, avoid collitions
 
 assert NUMBER_OF_ROBOTS >= NUMBER_OF_NEIGHTBORS
 
@@ -22,7 +24,7 @@ def wrap(z):
     return z % ARENA_SIDE_LENGTH
 
 class agent:
-    def __init__(self, id, x, y, vx, vy):
+    def __init__(self, id, x, y, vx, vy, map_dataset):
         self.id = id
         self.x = x
         self.y = y
@@ -30,6 +32,10 @@ class agent:
         self.vy = vy
 
         self.N = None 
+
+        # Create local map:
+        self.map = MapDataset(ARENA_SIDE_LENGTH,BLOCK_SIZE)
+        self.map.generate_blind_copy(map_dataset)
 
     def position(self):
         return np.array([self.x, self.y])
@@ -91,11 +97,11 @@ class agent:
         self.set_position(x_next,y_next)
         return x_next, y_next
     
-    
+
     
 class SwarmNetwork():
 
-    def __init__(self):
+    def __init__(self,map_dataset):
         # Set random intial point:
         x_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
         y_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
@@ -106,7 +112,7 @@ class SwarmNetwork():
 
         # Agents:
         self.index = np.arange(NUMBER_OF_ROBOTS)
-        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i]) for i in range(NUMBER_OF_ROBOTS)] # List of agents (own self-position)
+        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i],map_dataset) for i in range(NUMBER_OF_ROBOTS)] # List of agents (own self-position)
 
         # Adjacency and Laplacian matrix:
         self.Adj = np.zeros((NUMBER_OF_ROBOTS,NUMBER_OF_ROBOTS))
@@ -115,6 +121,10 @@ class SwarmNetwork():
         # Set initial topology:
         self.update_Topology()
 
+        # Generate common maps:
+        self.shared_map = MapDataset(ARENA_SIDE_LENGTH,BLOCK_SIZE)
+        self.shared_map = self.shared_map.generate_blind_copy(map_dataset)
+
 
     def state(self):
         return np.array([agent.position() for agent in self.agents])
@@ -122,7 +132,6 @@ class SwarmNetwork():
     def update_position(self,delta_x,delta_y):
         for i,agent in enumerate(self.agents):
             agent.set_position(delta_x[i],delta_y[i])
-
 
     def one_step(self, mode = "random"):
         
@@ -207,14 +216,29 @@ def toggle_mode(event):
 
 ################# PLOT ########################
 
+
+# Create Map:
+map_dataset = MapDataset(ARENA_SIDE_LENGTH, BLOCK_SIZE)
+map_image = map_dataset.generate_map(walls=True)
+
+# Set up the output using map size:
+fig = plt.figure(figsize=(map_image.shape[1]/15 , map_image.shape[0]/15), dpi=100)
+ax_map = plt.axes([0, 0, 1, 1])  # Adjust position for map
+map_plot = ax_map.imshow(map_image, cmap='gray')
+ax_map.axis('off')
+points, = ax_map.plot([], [], 'bo', lw=0)
+
+map_dataset.plot_info()
+
 # Set up the output (1024 x 768):
-fig = plt.figure(figsize=(10.24, 7.68), dpi=100)
-ax = plt.axes(xlim=(0, ARENA_SIDE_LENGTH), ylim=(0, ARENA_SIDE_LENGTH))
-points, = ax.plot([], [], 'bo', lw=0, )
+#fig = plt.figure(figsize=(10.24, 7.68), dpi=100)
+#ax = plt.axes(xlim=(0, ARENA_SIDE_LENGTH), ylim=(0, ARENA_SIDE_LENGTH))
+#points, = ax.plot([], [], 'bo', lw=0, )
+
 
 
 # Create swarm:
-net = SwarmNetwork()
+net = SwarmNetwork(map_dataset)
 mode = "stop"
 previous_mode = "random"
 
