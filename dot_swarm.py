@@ -1,3 +1,4 @@
+from re import M
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
@@ -9,13 +10,13 @@ ARENA_SIDE_LENGTH = 100
 BLOCK_SIZE        = 5
 STEPS             = 1000
 MAX_SPEED         = 5e-2
-BASE_SPEED        = 5e-3
+BASE_SPEED        = 1e-3
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 50
-NUMBER_OF_NEIGHTBORS = 2
+NUMBER_OF_ROBOTS  = 50 #50
+NUMBER_OF_NEIGHTBORS = 5
 NEIGHTBORS_SPACE = 100      # Radius of communication area
-SAFE_SPACE = 0.5            # Self safe-space, avoid collitions
+SAFE_SPACE = 2.5            # Self safe-space, avoid collitions
 
 assert NUMBER_OF_ROBOTS >= NUMBER_OF_NEIGHTBORS
 
@@ -33,9 +34,13 @@ class agent:
 
         self.N = None 
 
+        ## needed lookup map may delet later
+        self.map_dataset = map_dataset
         # Create local map:
         self.map = MapDataset(ARENA_SIDE_LENGTH,BLOCK_SIZE)
         self.map.generate_blind_copy(map_dataset)
+        print(f"x {x}, y {y}")
+        print(f"value {map_dataset.get_value_at(int(y*2/10), int(x*2/10))} x {int(x*2/10)} y {int(y*2/10)}")
 
     def position(self):
         return np.array([self.x, self.y])
@@ -65,6 +70,13 @@ class agent:
         new_x = np.copy(x)
         new_y = np.copy(y)
 
+        # avoid walls
+        if self.map_dataset.get_value_at(int(new_y*2/10), int(new_x*2/10)) == None or self.map_dataset.get_value_at(int((new_y+SAFE_SPACE)*2/10), int((new_x+SAFE_SPACE)*2/10)) == None:
+            self.vx = -self.vx
+            self.vy = -self.vy
+            new_x += self.vx
+            new_y += self.vy
+
         if new_x != self.x and new_y != self.y:
             for n in self.N:
                 distance = np.linalg.norm(self.position() - n.position())
@@ -76,7 +88,7 @@ class agent:
                     new_x += adjustment[0]
                     new_y += adjustment[1]
         
-        return new_x, new_y
+        return new_x, new_y 
     
     def cluster(self,state):
         # Difference position neightbors-agent 
@@ -96,6 +108,10 @@ class agent:
         
         self.set_position(x_next,y_next)
         return x_next, y_next
+
+    def update_map(self):
+        value = self.map_dataset.get_value_at(int(y*2/10), int(x*2/10))
+
     
 
     
@@ -103,8 +119,14 @@ class SwarmNetwork():
 
     def __init__(self,map_dataset):
         # Set random intial point:
-        x_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
-        y_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
+        x_0 = []
+        y_0 = []
+
+        # ensure not to spawn in wall
+        for i in range(NUMBER_OF_ROBOTS):
+            x, y = self.generate_randome_start(map_dataset)
+            x_0.append(x)
+            y_0.append(y)
 
         # Velocities random:
         vx = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(NUMBER_OF_ROBOTS,))
@@ -125,6 +147,16 @@ class SwarmNetwork():
         self.shared_map = MapDataset(ARENA_SIDE_LENGTH,BLOCK_SIZE)
         self.shared_map = self.shared_map.generate_blind_copy(map_dataset)
 
+    def generate_randome_start(self, map_dataset):
+        x = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH)
+        y = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH)
+        try: 
+            if map_dataset.get_value_at(int(y*2/10), int(x*2/10)) == None or map_dataset.get_value_at(int((y+SAFE_SPACE)*2/10), int((x+SAFE_SPACE)*2/10)) == None:
+                return self.generate_randome_start(map_dataset)
+            else:
+                return x, y
+        except:
+            return self.generate_randome_start(map_dataset)
 
     def state(self):
         return np.array([agent.position() for agent in self.agents])
@@ -220,6 +252,7 @@ def toggle_mode(event):
 # Create Map:
 map_dataset = MapDataset(ARENA_SIDE_LENGTH, BLOCK_SIZE)
 map_image = map_dataset.generate_map(walls=True)
+print(map_dataset)
 
 # Set up the output using map size:
 fig = plt.figure(figsize=(map_image.shape[1]/15 , map_image.shape[0]/15), dpi=100)

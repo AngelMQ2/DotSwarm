@@ -14,6 +14,22 @@ class MapDataset:
         self.K = self.ARENA_SIZE // self.BLOCK_SIZE
         self.map = None
         self.info = None
+
+    
+
+    # methode for printing out maps
+    def __str__(self):
+        str = ""
+        for i in range(self.K):
+            str += "\n"
+            for j in range(self.K):   
+                if self.info[i][j][1] == None:
+                    str += "{:}   ".format(self.info[i][j][1])
+                else:
+                    str += "{:<7}".format(self.info[i][j][1])
+        return str
+    
+
         
     def generate_map(self, walls = True):
         # Create empty map
@@ -70,7 +86,7 @@ class MapDataset:
             for j in range(self.K):
                 x = int(i*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
                 y = int(j*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
-                value = np.random.uniform(-20,60)    # TODO: Realistic temperature distribution         
+                value = np.random.randint(-20,60)    # TODO: Realistic temperature distribution         
                 if self.map[x,y] == 1:
                     info_map[i][j] = Data((x,y), value, True)
                 else:
@@ -97,6 +113,15 @@ class MapDataset:
     
     def get_info_map(self):
         return self.info
+
+    def get_value_at(self, i, j):
+        return self.info[i][j][1]
+
+    def set_info(self, i, j, value):
+        x = int(i*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
+        y = int(j*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
+        self.info[i][j] = Data((x,y), value, True)
+        
     
     def plot_info(self):
         plt.figure(figsize=(8, 6))
@@ -108,7 +133,7 @@ class MapDataset:
 
                 # Annotate the square with the temperature value
                 if cell.value is not None:
-                    plt.text(cell.centroid[1], cell.centroid[0], f'{cell.value:.2f}', ha='center', va='center')
+                    plt.text(cell.centroid[1], cell.centroid[0], f'{cell.value}', ha='center', va='center')
 
 
         plt.title('Occupation Plot')
