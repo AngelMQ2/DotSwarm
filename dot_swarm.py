@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
 from matplotlib.animation import FuncAnimation
-from map_dataset import MapDataset
+from map_dataset import MapDataset, DataSet
 
 # Environmen hyperparam:
 ARENA_SIDE_LENGTH = 100
@@ -12,19 +12,17 @@ MAX_SPEED         = 5e-2
 BASE_SPEED        = 5e-3
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 50
-NUMBER_OF_NEIGHTBORS = 2
-NEIGHTBORS_SPACE = 100      # Radius of communication area
-SAFE_SPACE = 0.5            # Self safe-space, avoid collitions
+NUMBER_OF_ROBOTS  = 20
+NEIGHTBORS_SPACE = 20      # Radius of communication area
+SAFE_SPACE = 2            # Self safe-space, avoid collitions
 
-assert NUMBER_OF_ROBOTS >= NUMBER_OF_NEIGHTBORS
 
 # Make the environment toroidal 
 def wrap(z):    
     return z % ARENA_SIDE_LENGTH
 
 class agent:
-    def __init__(self, id, x, y, vx, vy, map_dataset):
+    def __init__(self, id, x, y, vx, vy, dataset):
         self.id = id
         self.x = x
         self.y = y
@@ -33,10 +31,10 @@ class agent:
 
         self.N = None 
 
-        # Create local map:
-        self.map = MapDataset(ARENA_SIDE_LENGTH,BLOCK_SIZE)
-        self.map.generate_blind_copy(map_dataset)
+        # Create agent's dataset:
+        self.dataset = DataSet(dataset,copy=True)
 
+      
     def position(self):
         return np.array([self.x, self.y])
 
@@ -45,11 +43,20 @@ class agent:
         self.x = x
         self.y = y
 
+        self.monitoring()
+
     def neightbors(self):
         return self.N
 
     def set_neightbors(self,neightbors):
         self.N = neightbors
+
+    def monitoring(self):
+        if not self.dataset.get_state(self.x, self.y):
+            #if self.id == 0:
+            #    self.dataset.plot_info()
+            value = DATASET.get_value(self.x, self.y)
+            self.dataset.store_value(self.x, self.y, value)
 
     def forward(self):
         x_next = wrap(self.x + self.vx)
@@ -67,10 +74,10 @@ class agent:
 
         if new_x != self.x and new_y != self.y:
             for n in self.N:
-                distance = np.linalg.norm(self.position() - n.position())
+                distance = np.linalg.norm(self.position() - n.position()) + 0.001
                 if distance < SAFE_SPACE:
                     # Calculate the adjustment vector
-                    adjustment = self.position() - n.position()
+                    adjustment = [float(diff) for diff in (self.position() - n.position())]
                     adjustment /= distance  # Normalize to unit vector
                     adjustment *= (SAFE_SPACE - distance) / 2  # Scale by the amount to adjust
                     new_x += adjustment[0]
@@ -78,7 +85,7 @@ class agent:
         
         return new_x, new_y
     
-    def cluster(self,state):
+    def cluster(self):
         # Difference position neightbors-agent 
         delta_x = 0
         delta_y = 0
@@ -87,24 +94,34 @@ class agent:
         
         # Control law:
         for n in self.neightbors():
-            [n_x, n_y] = state[n.id]
-            delta_x += n_x - x
-            delta_y += n_y - y
+            [n_x, n_y] = [n.x,n.y]
+            delta_x += (n_x - x)*BASE_SPEED
+            delta_y += (n_y - y)*BASE_SPEED
         
-        x_next = wrap(x + BASE_SPEED*delta_x)
-        y_next = wrap(y + BASE_SPEED*delta_y)
+        if self.neightbors() == []:
+            delta_x += MAX_SPEED #*np.random.uniform(0,1)
+            delta_y += MAX_SPEED #*np.random.uniform(0,1)
+
+        x_next = wrap(x + delta_x)
+        y_next = wrap(y + delta_y)
         
         self.set_position(x_next,y_next)
         return x_next, y_next
     
-
     
 class SwarmNetwork():
 
-    def __init__(self,map_dataset):
+    def __init__(self,dataset):
+
         # Set random intial point:
-        x_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
-        y_0 = np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
+        x_0 = [] #np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
+        y_0 = [] #np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
+
+        # Ensure not to spawn in wall
+        for i in range(NUMBER_OF_ROBOTS):
+            x, y = self.generate_randome_start()
+            x_0.append(x)
+            y_0.append(y)
 
         # Velocities random:
         vx = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(NUMBER_OF_ROBOTS,))
@@ -112,7 +129,7 @@ class SwarmNetwork():
 
         # Agents:
         self.index = np.arange(NUMBER_OF_ROBOTS)
-        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i],map_dataset) for i in range(NUMBER_OF_ROBOTS)] # List of agents (own self-position)
+        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i],dataset) for i in range(NUMBER_OF_ROBOTS)] # List of agents (own self-position)
 
         # Adjacency and Laplacian matrix:
         self.Adj = np.zeros((NUMBER_OF_ROBOTS,NUMBER_OF_ROBOTS))
@@ -122,37 +139,48 @@ class SwarmNetwork():
         self.update_Topology()
 
         # Generate common maps:
-        self.shared_map = MapDataset(ARENA_SIDE_LENGTH,BLOCK_SIZE)
-        self.shared_map = self.shared_map.generate_blind_copy(map_dataset)
+        self.global_map = DataSet(dataset,copy=True)
+        self.update_map()
+        #self.global_map.plot_info()
+    
+    def generate_randome_start(self):
+        x = np.random.randint(low=0, high=ARENA_SIDE_LENGTH)
+        y = np.random.randint(low=0, high=ARENA_SIDE_LENGTH)
 
-
+        if BW_MAP[y,x] == 0:
+            return self.generate_randome_start()
+        else:    
+            return x, y
+        
     def state(self):
         return np.array([agent.position() for agent in self.agents])
 
-    def update_position(self,delta_x,delta_y):
-        for i,agent in enumerate(self.agents):
-            agent.set_position(delta_x[i],delta_y[i])
-
     def one_step(self, mode = "random"):
-        
         x = []
         y = []
         for agent in self.agents:
             if mode == "random":
                 _x,_y = agent.forward()
             elif mode == "cluster":
-                _x,_y = agent.cluster(self.state())
+                _x,_y = agent.cluster()
             else:   # Do nothing
                 _x,_y = agent.stop()
 
             x.append(_x)
             y.append(_y)
 
-        # Update all agent position at once to avoid troubles in the algorithm 
-        # Each agent has made its decision individually
-        #self.update_position(x,y)
         self.update_Topology()
+        self.update_map()
 
+    def update_map(self):
+        for agent in self.agents:
+            if agent.id == 0:
+                updated = self.global_map.merge(agent.dataset,show=False)
+            else:
+                updated = self.global_map.merge(agent.dataset,show=False)
+
+            #if updated: self.global_map.plot_info() # print(self.global_map)
+            
     def update_Topology(self):
         
         state = self.state()
@@ -181,23 +209,11 @@ class SwarmNetwork():
             # Update agent's neightbour:
             agent.set_neightbors(temp_neightbor)
 
-        #TODO: Check unconected subgraph
+    # TODO: Function to plot shared blind information map
+
+    # TODO: Update general map every time homing
             
 
-            
-        # Double neightbour correlation:    To be neightbors, 2 agents must be neightbors respectively
-        '''for agent in self.agents:
-            c_neight = agent.neightbors()
-
-            for j,n in enumerate(c_neight):
-                if agent.id not in self.agents[n].neightbors():
-                    c_neight[j] = agent.id    # Self-reference, agent connected with itself
-                else:
-                    self.Adj[agent.id, n] = 1
-                    self.Adj[n, agent.id] = 1 
-            
-            # Update agent's neightbor:
-            agent.set_neightbors(c_neight)'''
 
 
 def toggle_mode(event):
@@ -219,16 +235,21 @@ def toggle_mode(event):
 
 # Create Map:
 map_dataset = MapDataset(ARENA_SIDE_LENGTH, BLOCK_SIZE)
-map_image = map_dataset.generate_map(walls=True)
+BW_MAP = map_dataset.generate_map(walls=True)
+
+# Generate random dataset --> Map discretization with value that agent may infer
+DATASET = DataSet(map_dataset)
+DATASET.plot_info()
+# The agent operate with map and dataset variables to simulate the exploration and data adqusition task.
 
 # Set up the output using map size:
-fig = plt.figure(figsize=(map_image.shape[1]/15 , map_image.shape[0]/15), dpi=100)
+fig = plt.figure(figsize=(BW_MAP.shape[1]/15 , BW_MAP.shape[0]/15), dpi=100)
 ax_map = plt.axes([0, 0, 1, 1])  # Adjust position for map
-map_plot = ax_map.imshow(map_image, cmap='gray')
+map_plot = ax_map.imshow(BW_MAP, cmap='gray')
 ax_map.axis('off')
 points, = ax_map.plot([], [], 'bo', lw=0)
 
-map_dataset.plot_info()
+#map_dataset.plot_info()
 
 # Set up the output (1024 x 768):
 #fig = plt.figure(figsize=(10.24, 7.68), dpi=100)
@@ -257,7 +278,6 @@ def animate(i):
     y = p[:, 1]
 
     points.set_data(x, y)
-    
     print('Step ', i + 1, '/', STEPS, end='\r')
 
     return points,
