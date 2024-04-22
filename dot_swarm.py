@@ -8,13 +8,17 @@ from map_dataset import MapDataset, DataSet
 ARENA_SIDE_LENGTH = 100
 BLOCK_SIZE        = 5
 STEPS             = 1000
+
+# Agent hyperparameters:
 MAX_SPEED         = 5e-2
 BASE_SPEED        = 5e-3
+LIDAR_RANGE       = 5
+NUM_RAYS          = 6
+SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 20
-NEIGHTBORS_SPACE = 20      # Radius of communication area
-SAFE_SPACE = 2            # Self safe-space, avoid collitions
+NUMBER_OF_ROBOTS  = 50
+NEIGHTBORS_SPACE  = 20      # Radius of communication area
 
 
 # Make the environment toroidal 
@@ -43,22 +47,31 @@ class agent:
         # List of neightbors
         self.N = None 
 
+        # LIDAR datastructure:
+        self.scan = np.zeros((NUM_RAYS,LIDAR_RANGE))
+
         # Agent's dataset - based on a reference's parameter
         self.dataset = DataSet(dataset,copy=True)
 
-      
     def position(self):
         return np.array([self.x, self.y])
 
     def one_step(self):
-        # Check collition with neightbors:
-        self.avoid_collision()
 
-        # Check collition with environment:
+        self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
+        self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
+
+        # Read LIDAR:
+        self.lidar_scan()
+
+        # Check collition:
+        self.avoid_collision()      
 
         # Update state:
         self.x = wrap(self.x + self.vx)
         self.y = wrap(self.y + self.vy)
+        self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
+        self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
 
         # Check map values:
         self.monitoring()
@@ -79,9 +92,9 @@ class agent:
     def avoid_collision(self):
         if self.vx != 0 and self.vy != 0:   # If not stop
 
+            # Avoid collision with other agents:
             for n in self.N:
                 distance = np.linalg.norm(self.position() - n.position()) + 0.001
-
                 if distance < SAFE_SPACE:
                     # Calculate the adjustment vector
                     adjustment = [float(diff) for diff in (self.position() - n.position())]
@@ -89,9 +102,64 @@ class agent:
                     adjustment *= (SAFE_SPACE - distance) / 2  # Scale by the amount to adjust
                     self.vx += adjustment[0]
                     self.vy += adjustment[1]
+            
+            # Avoid collision with env obstables:
+            adjustment = [0,0]
+            min_dist = LIDAR_RANGE
+            for i,angle in enumerate(np.linspace(self.yaw, self.yaw + 2*np.pi, NUM_RAYS, endpoint=False)):
+                # Director vector:
+                dx = np.cos(angle)
+                dy = np.sin(angle)
+
+                # Count number of ones = distance to wall:
+                distance = np.count_nonzero(self.scan[i])
+                if distance < min_dist: min_dist = distance
+
+                avoid_factor = LIDAR_RANGE - distance  #TODO: Review cero counting rather than incremental counting
+
+                adjustment[0] += -avoid_factor*dx
+                adjustment[1] += -avoid_factor*dy
+            
+            norm = np.linalg.norm(adjustment)
+            if norm != 0:
+                # TODO: Improve scale factor
+                adjustment /= norm  # Normalize to unit vector
+                adjustment *= 2*self.V*((LIDAR_RANGE - min_dist) / LIDAR_RANGE)  # Scale by the amount to adjust
+                self.vx += adjustment[0] #*scale#*abs(self.vx) # Scaled by the vlocity abs value
+                self.vy += adjustment[1] #*scale#*abs(self.vy)
+
+
+    def lidar_scan(self, show = False):
+        lidar_readings = [] # Scan list
+        # Sweep circumference centred on the agent - starting from the agent's orientation
+        for i,angle in enumerate(np.linspace(self.yaw, self.yaw + 2*np.pi, NUM_RAYS, endpoint=False)):
+            # Director vector:
+            dx = np.cos(angle)
+            dy = np.sin(angle)
+
+            # Scan:
+            ray = []
+            for step in range(LIDAR_RANGE):
+                x = int(self.x + dx * step)
+                y = int(self.y + dy * step)
+                if 0 <= x < ARENA_SIDE_LENGTH and 0 <= y < ARENA_SIDE_LENGTH:
+                    ray.append(BW_MAP[y, x])
+                else:
+                    ray.append(0)  # If ray goes out of bounds, consider it as hitting an obstacle
+
+            lidar_readings.append(ray)
+
+            # Calculate adjustment vector:
+            ray = np.array(ray)
+
+            self.scan[i] = ray
 
 
     def forward(self):
+        # Randomly change the velocity:
+        #if np.random.uniform() > 0.97:
+        #    self.vx0 = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED)
+        #    self.vy0 = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED)
         self.vx = self.vx0
         self.vy = self.vy0
 
@@ -104,7 +172,6 @@ class agent:
 
         # Updating cycle:
         self.one_step()
-
     
     def cluster(self):
         # Difference position neightbors-agent 
