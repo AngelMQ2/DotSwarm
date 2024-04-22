@@ -4,6 +4,7 @@ from matplotlib.animation import FuncAnimation
 from collections import namedtuple
 import random
 
+
 # Data structure:
 Data = namedtuple("data",['centroid','value','state'])
 
@@ -179,6 +180,16 @@ class MapDataset:
         
         # TODO: Check white block full connectivity. Unconnected area with smaller area become black
 
+        '''max_area = 0
+        for i in range(self.ARENA_SIZE):
+            for j in range(self.ARENA_SIZE):
+                if map_image[i,j] == 1:
+                    area = self.flood_fill(map_image, i, j)
+                    if area < max_area:
+                        map_image[i,j] = 0
+                    else:
+                        max_area = area'''
+
         # Select home block:
         home_x = np.random.choice(np.argmax(map_image))
         home_y = np.random.choice(np.argmax(map_image))
@@ -188,7 +199,20 @@ class MapDataset:
         self.map = map_image
 
         return self.map
-        
+    
+    # Check block connectivity
+    def flood_fill(self, map_image, x, y):
+            cont = 0
+            if x < 0 or x >= self.ARENA_SIZE or y < 0 or y >= self.ARENA_SIZE or map_image[x, y] != 1:
+                return 0
+            map_image[x, y] = 2
+            cont += self.flood_fill(map_image, x + 1, y)
+            cont += self.flood_fill(map_image, x - 1, y)
+            cont += self.flood_fill(map_image, x, y + 1)
+            cont += self.flood_fill(map_image, x, y - 1)
+
+            return cont
+
     def get_map(self):
         return self.map
     

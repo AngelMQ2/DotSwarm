@@ -23,26 +23,44 @@ def wrap(z):
 
 class agent:
     def __init__(self, id, x, y, vx, vy, dataset):
+
+        # Agent ID:
         self.id = id
+
+        # Initial position:
         self.x = x
         self.y = y
+
+        # Velocity:
         self.vx = vx
         self.vy = vy
+        self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
+        self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
 
+        self.vx0 = vx   # Random fixed value
+        self.vy0 = vy   # Random fixed value
+
+        # List of neightbors
         self.N = None 
 
-        # Create agent's dataset:
+        # Agent's dataset - based on a reference's parameter
         self.dataset = DataSet(dataset,copy=True)
 
       
     def position(self):
         return np.array([self.x, self.y])
 
-    def set_position(self, new_x, new_y):
-        x,y = self.avoid_collision(new_x,new_y)
-        self.x = x
-        self.y = y
+    def one_step(self):
+        # Check collition with neightbors:
+        self.avoid_collision()
 
+        # Check collition with environment:
+
+        # Update state:
+        self.x = wrap(self.x + self.vx)
+        self.y = wrap(self.y + self.vy)
+
+        # Check map values:
         self.monitoring()
 
     def neightbors(self):
@@ -58,32 +76,35 @@ class agent:
             value = DATASET.get_value(self.x, self.y)
             self.dataset.store_value(self.x, self.y, value)
 
-    def forward(self):
-        x_next = wrap(self.x + self.vx)
-        y_next = wrap(self.y + self.vy)
-        self.set_position(x_next, y_next)
-        return x_next, y_next
-    
-    def stop(self):
-        self.set_position(self.x, self.y)
-        return self.x, self.y
+    def avoid_collision(self):
+        if self.vx != 0 and self.vy != 0:   # If not stop
 
-    def avoid_collision(self,x,y):
-        new_x = np.copy(x)
-        new_y = np.copy(y)
-
-        if new_x != self.x and new_y != self.y:
             for n in self.N:
                 distance = np.linalg.norm(self.position() - n.position()) + 0.001
+
                 if distance < SAFE_SPACE:
                     # Calculate the adjustment vector
                     adjustment = [float(diff) for diff in (self.position() - n.position())]
                     adjustment /= distance  # Normalize to unit vector
                     adjustment *= (SAFE_SPACE - distance) / 2  # Scale by the amount to adjust
-                    new_x += adjustment[0]
-                    new_y += adjustment[1]
-        
-        return new_x, new_y
+                    self.vx += adjustment[0]
+                    self.vy += adjustment[1]
+
+
+    def forward(self):
+        self.vx = self.vx0
+        self.vy = self.vy0
+
+        # Updating cycle:
+        self.one_step()
+    
+    def stop(self):
+        self.vx = 0
+        self.vy = 0
+
+        # Updating cycle:
+        self.one_step()
+
     
     def cluster(self):
         # Difference position neightbors-agent 
@@ -102,11 +123,11 @@ class agent:
             delta_x += MAX_SPEED #*np.random.uniform(0,1)
             delta_y += MAX_SPEED #*np.random.uniform(0,1)
 
-        x_next = wrap(x + delta_x)
-        y_next = wrap(y + delta_y)
+        self.vx = delta_x
+        self.vy = delta_y
         
-        self.set_position(x_next,y_next)
-        return x_next, y_next
+        # Updating cycle:
+        self.one_step()
     
     
 class SwarmNetwork():
@@ -156,20 +177,19 @@ class SwarmNetwork():
         return np.array([agent.position() for agent in self.agents])
 
     def one_step(self, mode = "random"):
-        x = []
-        y = []
+
         for agent in self.agents:
             if mode == "random":
-                _x,_y = agent.forward()
+                agent.forward()
             elif mode == "cluster":
-                _x,_y = agent.cluster()
+                agent.cluster()
             else:   # Do nothing
-                _x,_y = agent.stop()
+                agent.stop()
 
-            x.append(_x)
-            y.append(_y)
-
+        # Update agents neightbourhood:
         self.update_Topology()
+
+        # Update overall map:
         self.update_map()
 
     def update_map(self):
