@@ -8,6 +8,8 @@ import random
 # Data structure:
 Data = namedtuple("data",['centroid','value','state'])
 
+#TODO: Add timestamp
+
 class DataSet:
 
     def __init__(self, map, copy = False):
@@ -19,17 +21,20 @@ class DataSet:
 
         info_map = [[None for _ in range(self.dim)] for _ in range(self.dim)]
 
+        cont = 0
         for i in range(self.dim):
             for j in range(self.dim):
                 x = int(i*self.K + self.K/2)
                 y = int(j*self.K + self.K/2)
                 value = int(np.random.randint(-20,60))    # TODO: Realistic temperature distribution         
-                if map.map[x,y] == 1 and not copy:
+                if map.map[x,y] == 255 and not copy:
                     info_map[i][j] = Data((x,y), value, True)
+                    cont += 1
                 else:
                     info_map[i][j] = Data((x,y), None, False)
 
         self.info = info_map
+        self.area = cont
     
 
     # Methode for printing out maps
@@ -44,7 +49,7 @@ class DataSet:
                     str += "{:<7}".format(self.info[i][j][2])
         return str
     
-    def plot_info(self):
+    '''def plot_info(self):
 
         if self.figure is None:  # If figure doesn't exist, create a new one
             self.figure = plt.figure(figsize=(8, 6))
@@ -69,6 +74,41 @@ class DataSet:
         ax.set_ylabel('Y')  # Set y-axis label
         ax.invert_yaxis()  # Invert the y-axis
         ax.set_aspect('equal', 'box')
+        plt.show(block=True)'''
+    
+    def plot_info(self):
+
+        def update(ax):
+            nonlocal self
+            ax.clear()
+            
+            ax.axis('off')
+            ax.set_title('State Plot')  # Set title
+            ax.set_xlabel('X')  # Set x-axis label
+            ax.set_ylabel('Y')  # Set y-axis label
+            ax.invert_yaxis()  # Invert the y-axis
+            ax.set_aspect('equal', 'box')
+
+            for i in range(len(self.info)):
+                for j in range(len(self.info)):
+                    cell = self.info[i][j]
+                    color = 'white' if cell.state else 'black'
+
+                    ax.plot(cell.centroid[1], cell.centroid[0], marker='s', markersize=15, color=color)  # Plot square
+
+                    # Annotate the square with the temperature value
+                    if cell.value is not None:
+                        ax.text(cell.centroid[1], cell.centroid[0], f'{cell.value}', ha='center', va='center')
+
+
+        if self.figure is None:  # If figure doesn't exist, create a new one
+            self.figure = plt.figure(figsize=(8, 6))
+        else:  # Clear the previous plot
+            self.figure.clear()
+
+        ax = self.figure.gca()  # Get the current axes
+
+        ani = FuncAnimation(self.figure, update(ax), frames=range(10), repeat=True)  # Modify the range as needed
         plt.show(block=True)
 
     def index(self, x, y):
@@ -89,7 +129,7 @@ class DataSet:
         centroid = self.info[j][i].centroid
         new_data = Data(centroid, value, True)
         self.info[j][i] = new_data
-
+        self.area += 1
         del old_data
 
     def store_value(self, x , y, value):
@@ -109,25 +149,29 @@ class DataSet:
     def merge(self,source,show=True):
 
         assert self.dim == source.dim
-
         update = False
-        for i in range(self.dim):
-            for j in range(self.dim):
-                self_cell = self.get_info(i,j)
-                source_cell = source.get_info(i,j)
 
-                if self_cell.state != source_cell.state:
-                    # Update in both databases:
-                    update = True
-                    if self_cell.state == True:
-                        source.save(i,j, self_cell.value)
-                    elif source_cell.state == True:
-                        self.save(i,j, source_cell.value)
-                    
-        if update and show: self.plot_info()
+        if self.area != source.area:
+            for i in range(self.dim):
+                for j in range(self.dim):
+                    self_cell = self.get_info(i,j)
+                    source_cell = source.get_info(i,j)
 
+                    if self_cell.state != source_cell.state:
+                        update = True
+                        # Update in both databases:
+                        if self_cell.state == True:
+                            source.save(i,j, self_cell.value)
+                        elif source_cell.state == True:
+                            self.save(i,j, source_cell.value)
+
+            if self.area > source.area:
+                self.area = source.area
+            else:
+                source.area = self.area
+
+        if show and update: self.plot_info()
         return update
-        
 
 class MapDataset:
     def __init__(self, ARENA_SIZE, BLOCK_SIZE):
@@ -154,7 +198,7 @@ class MapDataset:
 
     def generate_map(self, walls = True):
         # Create empty map
-        map_image = np.ones((self.ARENA_SIZE, self.ARENA_SIZE), dtype=np.uint8)
+        map_image = np.ones((self.ARENA_SIZE, self.ARENA_SIZE), dtype=np.uint8)*255
 
         # Add border walls
         map_image[:, 0:self.BLOCK_SIZE] = 0
@@ -207,31 +251,21 @@ class MapDataset:
                         max_area = area'''
 
         # Select home block:
-        home_x = np.random.choice(np.argmax(map_image))
-        home_y = np.random.choice(np.argmax(map_image))
-        map_image[home_x:home_x+self.BLOCK_SIZE, home_y:home_y+self.BLOCK_SIZE] = 0.5   # Turn block gray, not working
-        print('Home point: ',home_x,home_y)
+        white_pixels = np.argwhere(map_image == 255)
+        #home = tuple(white_pixels[np.random.randint(0,len(white_pixels))]) 
+        home = [self.BLOCK_SIZE+self.BLOCK_SIZE/2,self.BLOCK_SIZE+self.BLOCK_SIZE/2]
+        # Plot home block:     
+        i = np.min([self.dim, int(home[0] // self.BLOCK_SIZE)])*self.BLOCK_SIZE
+        j = np.min([self.dim, int(home[1] // self.BLOCK_SIZE)])*self.BLOCK_SIZE
+        #home_x = np.random.choice(np.argmax(map_image))
+        #home_y = np.random.choice(np.argmax(map_image))
+        map_image[i:i+self.BLOCK_SIZE, j:j+self.BLOCK_SIZE] = 150   # Turn block gray, not working
+        print('Home point: ',home)
 
         self.map = map_image
 
-        return self.map
+        return self.map, [home[1],home[0]]    
 
-    def generate_info(self):
-        # Create empy info map:
-        info_map = [[None for _ in range(self.K)] for _ in range(self.K)]
-
-        for i in range(self.K):
-            for j in range(self.K):
-                x = int(i*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
-                y = int(j*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
-                value = np.random.randint(-20,60)    # TODO: Realistic temperature distribution         
-                if self.map[x,y] == 1:
-                    info_map[i][j] = Data((x,y), value, True)
-                else:
-                    info_map[i][j] = Data((x,y), None, False)
-
-        self.info = info_map
-8
     
     # Check block connectivity
     def flood_fill(self, map_image, x, y):
