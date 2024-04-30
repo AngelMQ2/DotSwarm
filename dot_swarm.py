@@ -1,3 +1,4 @@
+from re import M
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
@@ -12,6 +13,7 @@ STEPS             = 1000
 
 # Agent hyperparameters:
 MAX_SPEED         = 5e-2
+
 BASE_SPEED        = 5e-3
 LIDAR_RANGE       = 5
 NUM_RAYS          = 8
@@ -20,6 +22,7 @@ SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 # Swarm hyperparameters:
 NUMBER_OF_ROBOTS  = 20
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
+
 
 
 # Make the environment toroidal 
@@ -59,6 +62,7 @@ class agent:
         # List of neightbors
         self.N = None 
 
+
         # LIDAR datastructure:
         self.scan = np.zeros((NUM_RAYS,LIDAR_RANGE))
 
@@ -68,6 +72,7 @@ class agent:
 
         self.dataset = DataSet(map,copy=True)
         self.data_to_save = 0
+
 
     def position(self):
         return np.array([self.x, self.y])
@@ -220,7 +225,7 @@ class agent:
         self.vx = self.vx0
         self.vy = self.vy0
 
-    
+  
     def stop(self):
         self.vx = 0
         self.vy = 0
@@ -313,6 +318,7 @@ class SwarmNetwork():
     def __init__(self, home, map, dataset, start_home = False):
 
         # Set random intial point:
+
         x_0 = [] #np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
         y_0 = [] #np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
 
@@ -452,6 +458,7 @@ DATASET.plot_info()
 
 
 # The agent operate with map and dataset variables to simulate the exploration and data adqusition task.
+
 
 # Set up the output using map size:
 fig = plt.figure(figsize=(BW_MAP.shape[1]/15 , BW_MAP.shape[0]/15), dpi=100)

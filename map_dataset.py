@@ -188,7 +188,23 @@ class MapDataset:
         self.BLOCK_SIZE = BLOCK_SIZE
         self.dim = self.ARENA_SIZE // self.BLOCK_SIZE
         self.map = None
+        self.info = None
+
     
+
+    # methode for printing out maps
+    def __str__(self):
+        str = ""
+        for i in range(self.K):
+            str += "\n"
+            for j in range(self.K):   
+                if self.info[i][j][1] == None:
+                    str += "{:}   ".format(self.info[i][j][1])
+                else:
+                    str += "{:<7}".format(self.info[i][j][1])
+        return str
+    
+
     def generate_map(self, walls = True):
         # Create empty map
         map_image = np.ones((self.ARENA_SIZE, self.ARENA_SIZE), dtype=np.uint8)*255
@@ -263,6 +279,7 @@ class MapDataset:
         self.map = map_image
 
         return self.map, [home[1],home[0]]    
+
     
     # Check block connectivity
     def flood_fill(self, map_image, visited, x, y):
@@ -287,3 +304,89 @@ class MapDataset:
     def get_map(self):
         return self.map
     
+
+    def get_info_map(self):
+        return self.info
+
+    def get_value_at(self, i, j):
+        return self.info[i][j][1]
+
+    def set_info(self, i, j, value):
+        x = int(i*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
+        y = int(j*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
+        self.info[i][j] = Data((x,y), value, True)
+        
+    
+    def plot_info(self):
+        plt.figure(figsize=(8, 6))
+        for i in range(len(self.info)):
+            for j in range(len(self.info[i])):
+                cell = self.info[i][j]
+                color = 'white' if cell.occupation else 'black'
+                plt.plot(cell.centroid[1], cell.centroid[0], marker='s', markersize=15, color=color)  # Plot square
+
+                # Annotate the square with the temperature value
+                if cell.value is not None:
+                    plt.text(cell.centroid[1], cell.centroid[0], f'{cell.value}', ha='center', va='center')
+
+
+        plt.title('Occupation Plot')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        # Invert the axes
+        #plt.gca().invert_xaxis()
+        plt.gca().invert_yaxis()
+
+'''ARENA_SIZE = 100
+BLOCK_SIZE = 5
+STEPS = 1000
+map_dataset = MapDataset(ARENA_SIZE, BLOCK_SIZE)
+map_image = map_dataset.generate_map(walls=True)
+map_dataset.plot_info()
+
+# Set up the output using map size:
+fig = plt.figure(figsize=(map_image.shape[1]/15 , map_image.shape[0]/15), dpi=100)
+
+ax_map = plt.axes([0, 0, 1, 1])  # Adjust position for map
+
+map_plot = ax_map.imshow(map_image, cmap='gray')
+ax_map.axis('off')
+points, = ax_map.plot([], [], 'bo', lw=0)
+
+# Create swarm:
+# net = SwarmNetwork()
+# mode = "stop"
+# previous_mode = "random"
+
+# Define swarm animation functions here
+
+def init():
+    return map_plot,
+
+def animate(i):
+    # Update swarm
+    # net.one_step(mode)
+    # p = net.state()
+
+    # Dummy data for demonstration
+    p = np.random.rand(20, 2) * ARENA_SIZE
+
+    x = p[:, 0]
+    y = p[:, 1]
+
+    points.set_data(x, y)
+    
+    print('Step ', i + 1, '/', STEPS, end='\r')
+
+    return map_plot
+
+# Define key press event handler here
+
+# fig.canvas.mpl_connect('key_press_event', toggle_mode)
+
+#anim = FuncAnimation(fig, animate, init_func=init, frames=10, interval=200, blit=True)
+
+# videowriter = animation.FFMpegWriter(fps=60)
+# anim.save("..\output.mp4", writer=videowriter)
+
+plt.show()'''
