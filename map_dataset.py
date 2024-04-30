@@ -3,10 +3,13 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from collections import namedtuple
 import random
+import sys
+import time
 
+sys.setrecursionlimit(1500000)
 
 # Data structure:
-Data = namedtuple("data",['centroid','value','state'])
+Data = namedtuple("data",['ts','centroid','value','state'])
 
 #TODO: Add timestamp
 
@@ -26,16 +29,18 @@ class DataSet:
             for j in range(self.dim):
                 x = int(i*self.K + self.K/2)
                 y = int(j*self.K + self.K/2)
+                t = time.time()
                 value = int(np.random.randint(-20,60))    # TODO: Realistic temperature distribution         
                 if map.map[x,y] == 255 and not copy:
-                    info_map[i][j] = Data((x,y), value, True)
+                    
+                    info_map[i][j] = Data(t,(x,y), value, True)
                     cont += 1
                 else:
-                    info_map[i][j] = Data((x,y), None, False)
+                    info_map[i][j] = Data(t,(x,y), None, False)
 
         self.info = info_map
         self.area = cont
-    
+        self.last_update = 0
 
     # Methode for printing out maps
     def __str__(self):
@@ -123,20 +128,22 @@ class DataSet:
         
         return self.info[j][i].state
     
-    def save(self,i,j,value):
+    def save(self,ts,i,j,value):
         # Save memory:
         old_data = self.info[j][i]
         centroid = self.info[j][i].centroid
-        new_data = Data(centroid, value, True)
+        new_data = Data(ts,centroid, value, True)
         self.info[j][i] = new_data
         self.area += 1
+        self.last_update = ts
         del old_data
 
     def store_value(self, x , y, value):
         # Compute index:
         i,j = self.index(x,y)
         # Save memory:
-        self.save(i,j,value)
+        t = time.time()
+        self.save(t,i,j,value)
 
     def get_value(self,x, y):
         # Compute index:
@@ -151,24 +158,26 @@ class DataSet:
         assert self.dim == source.dim
         update = False
 
-        if self.area != source.area:
-            for i in range(self.dim):
-                for j in range(self.dim):
-                    self_cell = self.get_info(i,j)
-                    source_cell = source.get_info(i,j)
+        #if self.area != source.area:
+        for i in range(self.dim):
+            for j in range(self.dim):
+                self_cell = self.get_info(i,j)
+                source_cell = source.get_info(i,j)
 
-                    if self_cell.state != source_cell.state:
-                        update = True
-                        # Update in both databases:
-                        if self_cell.state == True:
-                            source.save(i,j, self_cell.value)
-                        elif source_cell.state == True:
-                            self.save(i,j, source_cell.value)
+                # Update in both databases:
+                if self_cell.value != source_cell.value:
+                    update = True
+                    # Compare time-stamp:
+                    if self_cell.ts > source_cell.ts:
+                        source.save(self_cell.ts,i,j, self_cell.value)
 
-            if self.area > source.area:
-                self.area = source.area
-            else:
-                source.area = self.area
+                    elif self_cell.ts < source_cell.ts:
+                        self.save(source_cell.ts, i,j, source_cell.value)
+
+        if self.area > source.area:
+            self.area = source.area
+        else:
+            source.area = self.area
 
         if show and update: self.plot_info()
         return update
@@ -222,46 +231,58 @@ class MapDataset:
                         if y_adj < self.ARENA_SIZE:
                             map_image[x:x+self.BLOCK_SIZE, y_adj:y_adj+self.BLOCK_SIZE] = 0
         
-        # TODO: Check white block full connectivity. Unconnected area with smaller area become black
+        # TODO: Check white block full connectivity. Unconnected area with smaller area become black        
+        
+        '''visited = [[False for _ in range(self.ARENA_SIZE)] for _ in range(self.ARENA_SIZE)]
 
-        '''max_area = 0
+        # Mark black pixels as visited:
+        black_pixels = (np.argwhere(map_image == 0))
+        for idx in black_pixels:
+            visited[idx[0]][idx[1]] = True
+
         for i in range(self.ARENA_SIZE):
             for j in range(self.ARENA_SIZE):
-                if map_image[i,j] == 1:
-                    area = self.flood_fill(map_image, i, j)
-                    if area < max_area:
-                        map_image[i,j] = 0
-                    else:
-                        max_area = area'''
+                if map_image[i,j] == 255 and not visited[i][j]:
+                    # Start exploring neighboring white pixels
+                    self.flood_fill(map_image,visited, i, j)
 
-        # Select home block:
+        print('Numero de visitas: ',len(np.argwhere(visited==True)))'''
+
+        # Select home position:
         white_pixels = np.argwhere(map_image == 255)
-        #home = tuple(white_pixels[np.random.randint(0,len(white_pixels))]) 
-        home = [self.BLOCK_SIZE+self.BLOCK_SIZE/2,self.BLOCK_SIZE+self.BLOCK_SIZE/2]
+        home = tuple(white_pixels[np.random.randint(0,len(white_pixels))]) 
+        #home = [self.BLOCK_SIZE+self.BLOCK_SIZE/2,self.BLOCK_SIZE+self.BLOCK_SIZE/2]   
+
         # Plot home block:     
         i = np.min([self.dim, int(home[0] // self.BLOCK_SIZE)])*self.BLOCK_SIZE
         j = np.min([self.dim, int(home[1] // self.BLOCK_SIZE)])*self.BLOCK_SIZE
-        #home_x = np.random.choice(np.argmax(map_image))
-        #home_y = np.random.choice(np.argmax(map_image))
+
         map_image[i:i+self.BLOCK_SIZE, j:j+self.BLOCK_SIZE] = 150   # Turn block gray, not working
-        print('Home point: ',home)
+        #print('Home point: ',home)
 
         self.map = map_image
 
         return self.map, [home[1],home[0]]    
     
     # Check block connectivity
-    def flood_fill(self, map_image, x, y):
-            cont = 0
-            if x < 0 or x >= self.ARENA_SIZE or y < 0 or y >= self.ARENA_SIZE or map_image[x, y] != 1:
-                return 0
-            map_image[x, y] = 2
-            cont += self.flood_fill(map_image, x + 1, y)
-            cont += self.flood_fill(map_image, x - 1, y)
-            cont += self.flood_fill(map_image, x, y + 1)
-            cont += self.flood_fill(map_image, x, y - 1)
+    def flood_fill(self, map_image, visited, x, y):
+            # Define the possible moves (up, down, left, right)
+            moves = [(0, 1), (0, -1), (1, 0), (-1, 0)]
 
-            return cont
+            # Set the visited pixel:
+            visited[x][y] = True
+
+            for dx, dy in moves:
+                new_x, new_y = x + dx, y + dy
+                # Check if the new position is within the image bounds
+                if 0 <= new_x < self.ARENA_SIZE and 0 <= new_y < self.ARENA_SIZE:
+                    # Check if the neighboring pixel is white and not visited yet
+                    if map_image[new_x,new_y] == 255 and not visited[new_x][new_y]:
+                        print('Se da')
+                        # Recursively explore the neighboring white pixel
+                        self.flood_fill(map_image, visited, new_x, new_y)
+
+
 
     def get_map(self):
         return self.map
