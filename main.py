@@ -9,7 +9,7 @@ from dot_swarm import SwarmNetwork
 ARENA_SIDE_LENGTH = 100
 BLOCK_SIZE        = 5
 WALLS_ON          = True
-STEPS             = 1000
+STEPS             = 10000
 
 # Agent hyperparameters:
 MAX_SPEED         = 5e-2
@@ -64,6 +64,33 @@ def eval_cluster(net):
 
     return n_cluster
 
+def get_centroid(net):
+    p = net.state()
+    x = p[:, 0]
+    y = p[:, 1]
+    n = len(x)
+    centroid_x = sum(x) / n
+    centroid_y = sum(y) / n
+
+    return centroid_x,centroid_y
+
+def eval_dispersion(net):
+    max_distance = -1
+
+    # Compute swarm centroid
+    centroid_x,centroid_y=get_centroid(net)
+    p = net.state()
+    x = p[:, 0]
+    y = p[:, 1]
+
+    # Get further agent to centroid
+    for i in range(len(x)):
+        distance = np.linalg.norm([x[i]-centroid_x,y[i]-centroid_y])
+        if distance > max_distance:
+            max_distance = distance
+        
+    return max_distance
+
 
 
 # Create Map:
@@ -92,27 +119,8 @@ ax_cl.set_ylim(0, NUMBER_OF_ROBOTS)  # Adjust ylim based on your data range
 
 # Create swarm:
 net = SwarmNetwork(home,map_dataset,DATASET,start_home=False)
-mode = "cluster"
-previous_mode = "cluster"
-
-
-'''def init_cl():
-    cl_plot.set_data([],[])
-    return cl_plot
-
-def animate_cluster(i):
-    #net.one_step(mode)
-
-    # Evaluation
-    n_cluster = eval_cluster(net)
-    print('Number of cluster: ', n_cluster)
-
-    # Update line plot with number of clusters
-    cl_plot.set_data(range(i+1), n_cluster[:i+1])
-
-    print('Step ', i + 1, '/', STEPS, end='\r')
-
-    return cl_plot,'''
+mode = "dispersion"
+previous_mode = "dispersion"
 
 
 def init():
@@ -124,11 +132,14 @@ def animate(i):
     net.one_step(mode)
     
     # Evaluation
-    n_cluster = eval_cluster(net)
+    #n_cluster = eval_cluster(net)
+    max_dispersion = eval_dispersion(net)
+
     #print('Number of cluster: ', n_cluster)
+    print('Max dispersion distance: ',max_dispersion)
 
     # Update line plot with number of clusters
-    ax_cl.plot(i,n_cluster)
+    #ax_cl.plot(i,n_cluster)
 
     # Get state and plot:
     p = net.state()

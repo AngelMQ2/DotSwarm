@@ -189,7 +189,6 @@ class MapDataset:
         self.dim = self.ARENA_SIZE // self.BLOCK_SIZE
         self.map = None
         self.info = None
-
     
 
     # methode for printing out maps

@@ -1,4 +1,3 @@
-from re import M
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
@@ -13,7 +12,6 @@ STEPS             = 1000
 
 # Agent hyperparameters:
 MAX_SPEED         = 5e-2
-
 BASE_SPEED        = 5e-3
 LIDAR_RANGE       = 5
 NUM_RAYS          = 8
@@ -273,43 +271,41 @@ class agent:
 
     def dispersion(self):
         # Difference position neightbors-agent
-        delta_x = 0
-        delta_y = 0
-        umbral = NEIGHTBORS_SPACE/2
+        umbral = 10
 
-        [x,y] = self.position()
-
+        repulsion_factor = 0.2
+        atraction_factor = -0.005
         
+        # Deal with too close agents:
+        neightbors_too_close = 0
+        close_point = (0,0)
+
         # Control law:
+        dispersion_force=(0,0)
         for n in self.neightbors():
-            [n_x, n_y] = [n.x,n.y]
-            dist=np.linalg.norm([n_x-x,n_y-y])
-            error = dist-umbral
-            delta_x += -np.sign(error)/dist
-            delta_y += -np.sign(error)/dist
+            diff =  [float(diff) for diff in (self.position() - n.position())]  # Difference vector
+            dist = np.linalg.norm(diff) # Norm
+            diff /= dist                # Normalize difference vector
 
-        # Normalize result:
-        delta_x = delta_x/np.linalg.norm([delta_x,delta_y])
-        delta_y = delta_y/np.linalg.norm([delta_x,delta_y])
+            # Determine scale and direction (repulsion or atraction)
+            if dist < umbral:   # Repulsion
+                if dist > SAFE_SPACE:   # Not too close neightbor
+                    dispersion_force += diff*repulsion_factor
+                else:                   # In case 2 agent too close together then first move away before having others into account
+                    neightbors_too_close += 1
+                    close_point = diff*repulsion_factor        
+            else:   # Atraction
+                dispersion_force += diff*atraction_factor
 
-        self.vx = delta_x*MAX_SPEED
-        self.vy = delta_y*MAX_SPEED
 
-        '''if dist > umbral:
-            self.vx = MAX_SPEED*delta_x/np.min([len(self.neightbors()),10])
-            self.vy = MAX_SPEED*delta_y/np.min([len(self.neightbors()),10])
+        # Asign velocity:
+        if neightbors_too_close != 1:
+            self.vx = dispersion_force[0]
+            self.vy = dispersion_force[1]
         else:
-            self.vx = -MAX_SPEED*delta_x/np.min([len(self.neightbors()),10])
-            self.vy = -MAX_SPEED*delta_y/np.min([len(self.neightbors()),10])'''
-        '''
-        #donut behavior
-        if dist>umbral:
-            x_next = wrap(x + BASE_SPEED*delta_x/len(self.neightbors()))
-            y_next = wrap(y + BASE_SPEED*delta_y/len(self.neightbors()))
-        else:
-            x_next = wrap(x - BASE_SPEED*delta_x/len(self.neightbors()))
-            y_next = wrap(y - BASE_SPEED*delta_y/len(self.neightbors()))
-        '''    
+            self.vx = close_point[0]
+            self.vy = close_point[1]
+
 
     
     
