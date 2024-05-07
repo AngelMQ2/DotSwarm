@@ -19,9 +19,10 @@ NUM_RAYS          = 8
 SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 20
+NUMBER_OF_ROBOTS  = 1
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
 
+# Control behavior with the keys:
 def toggle_mode(event):
     global mode, previous_mode
     if event.key == 'up':
@@ -36,6 +37,8 @@ def toggle_mode(event):
             mode = "stop"
     elif event.key == 'enter':
         mode = "home"
+    elif event.key == 'right':
+        mode = "explore"
     elif event.key == 'left':
         mode = "dispersion"
 
@@ -118,7 +121,7 @@ ax_cl.set_ylim(0, NUMBER_OF_ROBOTS)  # Adjust ylim based on your data range
 #cl_plot, = ax_cl.plot([], [], lw=2)
 
 # Create swarm:
-net = SwarmNetwork(home,map_dataset,DATASET,start_home=False)
+net = SwarmNetwork(home,map_dataset,DATASET,start_home=True)
 mode = "dispersion"
 previous_mode = "dispersion"
 
@@ -136,7 +139,7 @@ def animate(i):
     max_dispersion = eval_dispersion(net)
 
     #print('Number of cluster: ', n_cluster)
-    print('Max dispersion distance: ',max_dispersion)
+    #print('Max dispersion distance: ',max_dispersion)
 
     # Update line plot with number of clusters
     #ax_cl.plot(i,n_cluster)

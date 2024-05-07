@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 from map_dataset import MapDataset, DataSet
+import time
 
 # Environmen hyperparam:
 ARENA_SIDE_LENGTH = 100
@@ -18,7 +19,7 @@ NUM_RAYS          = 8
 SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 20
+NUMBER_OF_ROBOTS  = 1
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
 
 
@@ -33,13 +34,19 @@ class agent:
         # Agent ID:
         self.id = id
 
+        # Agent internal timers:
+        self.update_timer = time.time() + np.random.randint(0,NUMBER_OF_ROBOTS)
+        
+
+        print('Agent ',self.id,' time: ', self.update_timer)
+
         # Operation mode variable:
         self.mode = "stop"
 
         # Initial position:
         self.x = x
         self.y = y
-
+    
         # Velocity:
         self.vx = vx
         self.vy = vy
@@ -60,17 +67,22 @@ class agent:
         # List of neightbors
         self.N = None 
 
-
         # LIDAR datastructure:
         self.scan = np.zeros((NUM_RAYS,LIDAR_RANGE))
+        self.obstacle_score = 0     # Counter to determine wheter there is a infront obstacle
 
         # Agent's dataset - based on a reference's parameter
-        self.map = map.map        # Black and white image used to navigate
+        self.map = map.map            # Black and white image used to navigate
         self.world = DATASET          # External world information (simulate monitoring process)
 
         self.dataset = DataSet(map,copy=True)
         self.data_to_save = 0
+        self.update_plot = False
 
+        # Variables for exploration
+        self.previous_location = self.dataset.get_centroid(self.x,self.y)
+        self.desired_point = None
+        
 
     def position(self):
         return np.array([self.x, self.y])
@@ -78,38 +90,46 @@ class agent:
     def set_mode(self, mode):
         self.mode = mode
 
-    def norm_velocity(self):
+    def norm_velocity(self, keep_yaw = False):
         if self.vx != 0 and self.vy != 0:
             self.vx = MAX_SPEED*(self.vx/np.linalg.norm([self.vx,self.vy]))
             self.vy = MAX_SPEED*(self.vy/np.linalg.norm([self.vx,self.vy]))
         self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
-        self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
+        if not keep_yaw:
+            self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
 
     def one_step(self):
         
+        # Read LIDAR:
+        self.lidar_scan()
+
         # Take action:
         if self.mode == "random":
-            if self.data_to_save > 5:   # If number of data discover greater than 5 come back home for updating map
+                self.forward()
+
+        elif self.mode == "explore":
+            if self.data_to_save > 500:   # If number of data discover greater than 5 come back home for updating map
                 self.homing()
             else:
-                self.forward()
+                self.exploration()
+
         elif self.mode == "cluster":
             self.cluster()
+
         elif self.mode == "home":
             self.homing()
+
         elif self.mode == "dispersion":
             self.dispersion()
+
         else:   # Do nothing
             self.stop()
 
         # Normalize velocity vector:
-        self.norm_velocity()
-
-        # Read LIDAR:
-        self.lidar_scan()
+        #self.norm_velocity()
 
         # Check collition:
-        self.avoid_collision()      
+        self.avoid_collision()     
 
         # Normalize velocity vector:
         self.norm_velocity()
@@ -132,8 +152,14 @@ class agent:
 
         # Check map values:
         self.monitoring()
-        #self.update_map()
+        self.update_map()
+        self.track_location()
 
+        if self.id == 0 and self.update_plot: 
+            self.dataset.plot_info()
+            self.update_plot = False
+
+        
 
     def neightbors(self):
         return self.N
@@ -143,13 +169,19 @@ class agent:
 
     def monitoring(self):
         if self.dataset.get_value(self.x, self.y) != self.world.get_value(self.x,self.y):
+            
+            self.update_plot = True
             self.data_to_save += 1
             value = self.world.get_value(self.x, self.y)
-            self.dataset.store_value(self.x, self.y, value)
+            self.dataset.store_value(self.x, self.y, value, True, True)
 
     def update_map(self):
-        for n in self.N:
-            self.dataset.merge(n.dataset, show = False)
+        t = time.time()
+        if abs(self.update_timer - t) > NUMBER_OF_ROBOTS:
+            for n in self.N:
+                self.dataset.merge(n.dataset, show = False)
+            self.update_timer = t
+            print('Update id: ',self.id)
 
     def low_pass_filter(self):
 
@@ -165,6 +197,9 @@ class agent:
         self.last_vy = new_vy
 
     def avoid_collision(self):
+
+        self.norm_velocity(keep_yaw = True)
+
         if self.vx != 0 and self.vy != 0:
             # Avoid collision with other agents:
             for n in self.N:
@@ -179,7 +214,7 @@ class agent:
             
             # Avoid collision with env obstables:
             adjustment = [0,0]
-            for i,angle in enumerate(np.linspace(self.yaw, self.yaw + 2*np.pi, NUM_RAYS, endpoint=False)):
+            for i,angle in enumerate(np.linspace(0, 2*np.pi, NUM_RAYS, endpoint=False)):
                 # Director vector:
                 dx = -np.cos(angle)
                 dy = -np.sin(angle)
@@ -196,7 +231,7 @@ class agent:
     def lidar_scan(self):
 
         # Sweep circumference centred on the agent - starting from the agent's orientation
-        for i,angle in enumerate(np.linspace(self.yaw, self.yaw + 2*np.pi, NUM_RAYS, endpoint=False)):
+        for i,angle in enumerate(np.linspace(0,  2*np.pi, NUM_RAYS, endpoint=False)):
             # Director vector:
             dx = np.cos(angle)
             dy = np.sin(angle)
@@ -208,6 +243,11 @@ class agent:
                 y = int(self.y + dy * step)
                 if 0 <= x < ARENA_SIDE_LENGTH and 0 <= y < ARENA_SIDE_LENGTH:
                     ray.append(self.map[y, x])
+
+                    # Mark block as unreacheable:
+                    if self.map[y,x] == 0 and self.dataset.get_reacheable(x,y):
+                        self.dataset.store_value(x,y, None, False, False)
+                        self.update_plot = True
                 else:
                     ray.append(0)  # If ray goes out of bounds, consider it as hitting an obstacle
 
@@ -217,11 +257,9 @@ class agent:
 
     def forward(self):
         # Randomly change the velocity:
-        if np.random.uniform() > 0.99:
-            self.vx0 += np.random.uniform(low=-BASE_SPEED, high=BASE_SPEED)
-            self.vy0 += np.random.uniform(low=-BASE_SPEED, high=BASE_SPEED)
-        self.vx = self.vx0
-        self.vy = self.vy0
+        if self.vx == 0 and self.vy == 0:
+            self.vx = self.vx0
+            self.vy = self.vy0
 
   
     def stop(self):
@@ -307,8 +345,97 @@ class agent:
             self.vy = close_point[1]
 
 
+    def track_location(self):
+        # Undo the forward step:
+        prev_x = self.x - self.vx
+        prev_y = self.y - self.vy
+        prev_index = self.dataset.index(prev_x,prev_y)
+        current_index = self.dataset.index(self.x, self.y)
+
+        if prev_index != current_index:
+            self.previous_location = self.dataset.get_centroid(prev_y, prev_x)
+            
+    def choose_next_block(self):
+    # Choose blocks randomly from a list of (Reacheable,Non-explored). 
+    # Filter first those block that are reacheables, then the non-explored (else reacheables only). List of candidates block, choose randomly weighted
+
+        self_idx = self.dataset.index(self.x, self.y)
+        self_previous_idx = self.dataset.index(self.previous_location[0],self.previous_location[1])
+        nodes_to_explore = [(1, 1), (1, 0), (1, -1), (0, 1), (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+
+        # Nodes candidates:
+        reacheable_centroids = []
+        non_visited_centroids = []  
+
+        for node_idx in nodes_to_explore:
+            # Index of nodes to explore
+            i = self_idx[0] + node_idx[0]
+            j = self_idx[1] + node_idx[1]
+
+            # Check boundaries:
+            size = self.dataset.size()
+            if i < size[0] and j < size[1] and i != self_previous_idx[0] and j != self_previous_idx[1]:
+                info = self.dataset.get_info(i,j)
+                # Keep only reacheable:
+                if info.reacheable:
+                    # Keep only un-discovered:
+                    reacheable_centroids.append(info.centroid)
+                    if not info.visited:
+                        non_visited_centroids.append(info.centroid)
+        
+        if non_visited_centroids == []: non_visited_centroids = reacheable_centroids    # If no block no discovered then operate with the reacheables
+
+        # Option 1: Compute distance to previous location, used as prior probabilities
+        dist_array = np.array([np.linalg.norm([self.previous_location[0] - centroid[0], self.previous_location[1] - centroid[1]]) for centroid in non_visited_centroids])
+        prior_prob = np.array(dist_array/np.sum(dist_array))
+
+        #selected_idx = np.random.choice(range(len(non_visited_centroids)), p = prior_prob)
+
+        #Optimon 2: Select radmoly one form non-visited
+        selected_idx = np.random.choice(range(len(non_visited_centroids)))
+        selected_centroid = non_visited_centroids[selected_idx]
+        self.desired_point = selected_centroid
     
-    
+        print(selected_centroid)
+
+    def check_reacheable_block(self):
+        
+        # Count zero values of ahead lidar ray:
+        ray = self.scan[0]  # Corresponding of ray at direction self.yaw (head of agent)
+        zero_val = len(ray) - np.count_nonzero(ray)
+        self.obstacle_score += zero_val
+
+        # Reset score:
+        if zero_val == 0 and self.obstacle_score > 0: 
+            self.obstacle_score -= 10
+
+        if self.obstacle_score > 100: return True
+        else: return False
+
+    def exploration(self):
+
+        if self.desired_point == None:
+            self.choose_next_block()
+        
+        # Control law:
+        [x,y] = self.position()
+        delta_x = self.desired_point[0] - x
+        delta_y = self.desired_point[1] - y
+
+        # Check if has reach point:
+        if np.linalg.norm([self.desired_point[0]-x, self.desired_point[1]-y]) < SAFE_SPACE:
+            self.desired_point = None # Choose new point to tracj
+            # Information (ts, temperature, reacheable, visited) already stored by monitoring
+        # Check if block is unreacheable:
+        #if self.check_reacheable_block(): # If block is unreacheable
+        #    # Mark block as unreacheable:
+        #    self.dataset.store_value(self.desired_point[0], self.desired_point[1], None, False, False)
+        #    print('WALL')
+        #    self.desired_point = None
+
+        self.vx = delta_x
+        self.vy = delta_y
+
 class SwarmNetwork():
 
     def __init__(self, home, map, dataset, start_home = False):
@@ -376,7 +503,7 @@ class SwarmNetwork():
     def update_map(self):
         for agent in self.agents:
             if agent.id == 0:
-                self.global_map.merge(agent.dataset,show=False)
+                self.global_map.merge(agent.dataset,show=True)
             else:
                 self.global_map.merge(agent.dataset,show=False)
             

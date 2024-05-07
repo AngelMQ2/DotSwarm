@@ -9,7 +9,7 @@ import time
 sys.setrecursionlimit(1500000)
 
 # Data structure:
-Data = namedtuple("data",['ts','centroid','value','state'])
+Data = namedtuple("Data",['ts','centroid','value','visited','reacheable'])
 
 #TODO: Add timestamp
 
@@ -33,25 +33,28 @@ class DataSet:
                 value = int(np.random.randint(-20,60))    # TODO: Realistic temperature distribution         
                 if map.map[x,y] == 255 and not copy:
                     
-                    info_map[i][j] = Data(t,(x,y), value, True)
+                    info_map[i][j] = Data(t,(x,y), value, True, True)
                     cont += 1
                 else:
-                    info_map[i][j] = Data(t,(x,y), None, False)
+                    if copy:
+                        info_map[i][j] = Data(t,(x,y), None, False, True)   # Initialize blid graph: non-visited, all reacheable
+                    else:
+                        info_map[i][j] = Data(t,(x,y), None, False, False)   # Actual value
 
         self.info = info_map
         self.area = cont
         self.last_update = 0
 
     # Methode for printing out maps
-    def __str__(self):
+    def _str_(self):
         str = ""
         for i in range(self.dim):
             str += "\n"
             for j in range(self.dim):   
-                if self.info[i][j][1] == None:
-                    str += "{:}   ".format(self.info[i][j][2])
+                if self.info[i][j].value == None:
+                    str += "{:}   ".format(self.info[i][j].value)
                 else:
-                    str += "{:<7}".format(self.info[i][j][2])
+                    str += "{:<7}".format(self.info[i][j].value)
         return str
     
     '''def plot_info(self):
@@ -64,7 +67,7 @@ class DataSet:
         for i in range(len(self.info)):
             for j in range(len(self.info)):
                 cell = self.info[i][j]
-                color = 'white' if cell.state else 'black'
+                color = 'white' if cell.visited else 'black'
 
                 plt.plot(cell.centroid[1], cell.centroid[0], marker='s', markersize=15, color=color)  # Plot square
 
@@ -97,7 +100,7 @@ class DataSet:
             for i in range(len(self.info)):
                 for j in range(len(self.info)):
                     cell = self.info[i][j]
-                    color = 'white' if cell.state else 'black'
+                    color = 'white' if cell.reacheable else 'black'
 
                     ax.plot(cell.centroid[1], cell.centroid[0], marker='s', markersize=15, color=color)  # Plot square
 
@@ -122,28 +125,45 @@ class DataSet:
         j = np.min([self.dim, int(y // self.K)])
         return i,j
     
-    def get_state(self,x,y):
+    def size(self):
+        return (len(self.info),len(self.info[0]))
+    
+    def get_visited(self,x,y):
         # Compute index:
         i,j = self.index(x,y)
         
-        return self.info[j][i].state
+        return self.info[j][i].visited
     
-    def save(self,ts,i,j,value):
+    def get_centroid(self,x,y):
+        # Compute index:
+        i,j = self.index(x,y)
+        
+        return self.info[j][i].centroid
+    
+    def get_reacheable(self,x,y):
+        # Compute index:
+        i,j = self.index(x,y)
+        
+        return self.info[j][i].reacheable
+    
+    def save(self, ts, i, j, value, visited, reacheable):
         # Save memory:
         old_data = self.info[j][i]
-        centroid = self.info[j][i].centroid
-        new_data = Data(ts,centroid, value, True)
+        centroid = self.info[j][i].centroid # Pick cnetroid
+
+        new_data = Data(ts,centroid, value, visited, reacheable)   # Generate new named touple with new value
         self.info[j][i] = new_data
-        self.area += 1
+        self.area += 1  # Increase area score
+
         self.last_update = ts
         del old_data
 
-    def store_value(self, x , y, value):
+    def store_value(self, x , y, value, visited, reacheable):
         # Compute index:
         i,j = self.index(x,y)
         # Save memory:
         t = time.time()
-        self.save(t,i,j,value)
+        self.save(t, i, j, value, visited, reacheable)
 
     def get_value(self,x, y):
         # Compute index:
@@ -169,10 +189,10 @@ class DataSet:
                     update = True
                     # Compare time-stamp:
                     if self_cell.ts > source_cell.ts:
-                        source.save(self_cell.ts,i,j, self_cell.value)
+                        source.save(self_cell.ts,i,j, self_cell.value, self_cell.visited, self_cell.reacheable)
 
                     elif self_cell.ts < source_cell.ts:
-                        self.save(source_cell.ts, i,j, source_cell.value)
+                        self.save(source_cell.ts, i,j, source_cell.value, source_cell.visited, source_cell.reacheable) 
 
         if self.area > source.area:
             self.area = source.area
@@ -365,7 +385,7 @@ def init():
 def animate(i):
     # Update swarm
     # net.one_step(mode)
-    # p = net.state()
+    # p = net.visited()
 
     # Dummy data for demonstration
     p = np.random.rand(20, 2) * ARENA_SIZE
