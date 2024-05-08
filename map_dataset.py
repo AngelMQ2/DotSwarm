@@ -8,42 +8,47 @@ import time
 
 sys.setrecursionlimit(1500000)
 
-# Data structure:
+
+# Data structure to store each map discrete block information: timestamp, discrete block centroid, temperetura, visited (bool) and reacheable block (bool)
 Data = namedtuple("Data",['ts','centroid','value','visited','reacheable'])
 
-#TODO: Add timestamp
 
 class DataSet:
+    # NOTE: This class generate a matrix which discretize the space given by the black & white map
+    # If is not a copy, then the map info is complete available. In case it is a blind_copy, then all the matrix block are set as reacheable and non-visited
+    def __init__(self, map, blind_copy = False):  
+        # Get dimension from white and black image (map)
+        self.arena_size = map.ARENA_SIZE
+        self.K = map.BLOCK_SIZE     # Key of the Hash table -> debide continuous (x,y) coordinates by this value to obtain the corresponding place in the matrix
+        self.dim = map.ARENA_SIZE // map.BLOCK_SIZE # Dimension of discretazed map
 
-    def __init__(self, map, copy = False):
+        self.figure = None  # Figure to plot dataset
 
-        self.dim = map.ARENA_SIZE // map.BLOCK_SIZE
-        self.K = map.BLOCK_SIZE
-
-        self.figure = None
-
+        # Initilize map dataset. Consist on a graph where each node store the information in Data
         info_map = [[None for _ in range(self.dim)] for _ in range(self.dim)]
 
-        cont = 0
+        area_cont = 0   # Count number of reacheable blocks (area)
         for i in range(self.dim):
             for j in range(self.dim):
+                # Compute block (x,y) centroid, relative to continous space (BW_image)
                 x = int(i*self.K + self.K/2)
                 y = int(j*self.K + self.K/2)
-                t = time.time()
-                value = int(np.random.randint(-20,60))    # TODO: Realistic temperature distribution         
-                if map.map[x,y] == 255 and not copy:
-                    
+                t = time.time()                           # Timestep in which data is stored
+                value = int(np.random.randint(-20,60))    # Temperature value, randomly chosen     
+                
+                # Determine wheter is a reacheable block (white) or non-reacheable block (black)
+                if map.map[x,y] == 255 and not blind_copy:      # Ensure is not a copy, otherwhise no value is stored as it have to be discovered
                     info_map[i][j] = Data(t,(x,y), value, True, True)
-                    cont += 1
+                    area_cont += 1
                 else:
-                    if copy:
+                    if blind_copy:
                         info_map[i][j] = Data(t,(x,y), None, False, True)   # Initialize blid graph: non-visited, all reacheable
                     else:
-                        info_map[i][j] = Data(t,(x,y), None, False, False)   # Actual value
+                        info_map[i][j] = Data(t,(x,y), None, False, False)   # Actual cell value for non-reacheable block in the map
 
-        self.info = info_map
-        self.area = cont
-        self.last_update = 0
+        self.info = info_map    # Store matrix
+        self.area = area_cont   # Store maximun area (number of block reacheables)
+        self.last_update = 0    # Time counter to determine next update
 
     # Methode for printing out maps
     def _str_(self):
@@ -57,33 +62,7 @@ class DataSet:
                     str += "{:<7}".format(self.info[i][j].value)
         return str
     
-    '''def plot_info(self):
-
-        if self.figure is None:  # If figure doesn't exist, create a new one
-            self.figure = plt.figure(figsize=(8, 6))
-        else:  # Clear the previous plot
-            self.figure.clear()
-
-        for i in range(len(self.info)):
-            for j in range(len(self.info)):
-                cell = self.info[i][j]
-                color = 'white' if cell.visited else 'black'
-
-                plt.plot(cell.centroid[1], cell.centroid[0], marker='s', markersize=15, color=color)  # Plot square
-
-                # Annotate the square with the temperature value
-                if cell.value is not None:
-                    plt.text(cell.centroid[1], cell.centroid[0], f'{cell.value}', ha='center', va='center')
-
-        ax = self.figure.gca()  # Get the current axes
-        ax.axis('off')
-        ax.set_title('State Plot')  # Set title
-        ax.set_xlabel('X')  # Set x-axis label
-        ax.set_ylabel('Y')  # Set y-axis label
-        ax.invert_yaxis()  # Invert the y-axis
-        ax.set_aspect('equal', 'box')
-        plt.show(block=True)'''
-    
+    # Function to plot in real-time the dataset matrix:
     def plot_info(self):
 
         def update(ax):
@@ -92,140 +71,133 @@ class DataSet:
             
             ax.axis('off')
             ax.set_title('State Plot')  # Set title
-            ax.set_xlabel('X')  # Set x-axis label
-            ax.set_ylabel('Y')  # Set y-axis label
-            ax.invert_yaxis()  # Invert the y-axis
+            ax.set_xlabel('X')          # Set x-axis label
+            ax.set_ylabel('Y')          # Set y-axis label
+            ax.invert_yaxis()           # Invert the y-axis
             ax.set_aspect('equal', 'box')
 
+            # Iterate over matrix cells
             for i in range(len(self.info)):
                 for j in range(len(self.info)):
                     cell = self.info[i][j]
                     color = 'white' if cell.reacheable else 'black'
 
+                    # Plot in the centroid position a square of color black/white depending in it is reacheable
                     ax.plot(cell.centroid[1], cell.centroid[0], marker='s', markersize=15, color=color)  # Plot square
 
                     # Annotate the square with the temperature value
                     if cell.value is not None:
                         ax.text(cell.centroid[1], cell.centroid[0], f'{cell.value}', ha='center', va='center')
 
-
+        # Create figure if needed
         if self.figure is None:  # If figure doesn't exist, create a new one
             self.figure = plt.figure(figsize=(8, 6))
         else:  # Clear the previous plot
             self.figure.clear()
 
         ax = self.figure.gca()  # Get the current axes
-
         ani = FuncAnimation(self.figure, update(ax), frames=range(10), repeat=True)  # Modify the range as needed
         plt.show(block=True)
 
+    # Dataset size
+    def size(self):
+        return (len(self.info),len(self.info[0]))
+    
+    # Function to obtain the matrix discrete index relative to a concrete continous position (x,y)
     def index(self, x, y):
-        # Compute index:
+        # Compute index - Hash table using the key K
         i = np.min([self.dim, int(x // self.K)])
         j = np.min([self.dim, int(y // self.K)])
         return i,j
     
-    def size(self):
-        return (len(self.info),len(self.info[0]))
+    # Visited value of block corresponding to input position (x,y)
+    def get_visited(self, x, y):
+        i,j = self.index(x, y)              # Compute index
+        return self.info[j][i].visited      # Inverted axes needed because matrix and BW_map has transposes axes
     
-    def get_visited(self,x,y):
-        # Compute index:
-        i,j = self.index(x,y)
-        
-        return self.info[j][i].visited
+    # Return discovered area so far
+    def covered_area(self):
+        return self.area
     
-    def get_centroid(self,x,y):
-        # Compute index:
-        i,j = self.index(x,y)
-        
-        return self.info[j][i].centroid
-    
-    def get_reacheable(self,x,y):
-        # Compute index:
-        i,j = self.index(x,y)
-        
-        return self.info[j][i].reacheable
-    
+    # Function to store Data(timestamp, temperature, visited, reacheable) in the index (i,j)
     def save(self, ts, i, j, value, visited, reacheable):
-        # Save memory:
+        # Secover previously stored value and get centroid:
         old_data = self.info[j][i]
         centroid = self.info[j][i].centroid # Pick cnetroid
-
-        new_data = Data(ts,centroid, value, visited, reacheable)   # Generate new named touple with new value
+        
+        # Generate and store new data:
+        new_data = Data(ts, centroid, value, visited, reacheable)   # Generate new named touple with new value
         self.info[j][i] = new_data
-        self.area += 1  # Increase area score
+        self.last_update = ts          # Last update up-to-date
+        if reacheable: self.area += 1  # Increase area score only if saved block is reacheable
+        
+        del old_data                   # Delete old data - good practice
 
-        self.last_update = ts
-        del old_data
+    # Function to store Data(...) as result of the environment monitoring. Data relative to continous coordinates (x,y)
+    def store_value(self, x, y, value, visited, reacheable):
+        i,j = self.index(x,y)                           # Compute index
+        t = time.time()                                 # Current timestamp for saving
+        self.save(t, i, j, value, visited, reacheable)  # Save data
 
-    def store_value(self, x , y, value, visited, reacheable):
-        # Compute index:
-        i,j = self.index(x,y)
-        # Save memory:
-        t = time.time()
-        self.save(t, i, j, value, visited, reacheable)
-
-    def get_value(self,x, y):
-        # Compute index:
-        i,j = self.index(x,y)
-        return self.info[j][i].value
+    # Centroid of the block corresponding to current agent's position (x,y)
+    def get_centroid(self, x, y):
+        i,j = self.index(x, y)               # Compute index
+        centroid = self.info[j][i].centroid
+        return (centroid[1], centroid[0])    # Inverted axes needed because matrix and BW_map has transposes axes
     
+    # Reacheable value of block corresponding to the input position (x,y)
+    def get_reacheable(self, x, y):
+        i,j = self.index(x, y)               # Compute index
+        return self.info[j][i].reacheable    # Inverted axes needed because matrix and BW_map has transposes axes
+    
+    # Temperature value of block corresponding to the input position (x,y)
+    def get_value(self,x, y):
+        i,j = self.index(x,y)                # Compute index 
+        return self.info[j][i].value         # Inverted axes needed because matrix and BW_map has transposes axes
+    
+    # Return whole cell related to index (i,j)
     def get_info(self,i,j):
         return self.info[j][i]
     
-    def merge(self,source,show=True):
-
+    # Function to combine information of 2 matrix: self + other (source)
+    def merge(self, source, show = False):
         assert self.dim == source.dim
         update = False
-
-        #if self.area != source.area:
         for i in range(self.dim):
             for j in range(self.dim):
+                # Extract cell info:
                 self_cell = self.get_info(i,j)
                 source_cell = source.get_info(i,j)
 
-                # Update in both databases:
-                if self_cell.value != source_cell.value:
+                # Update in both databases with the newest info per each cell:
+                if self_cell != source_cell:    # Determine if same touple
                     update = True
                     # Compare time-stamp:
-                    if self_cell.ts > source_cell.ts:
-                        source.save(self_cell.ts,i,j, self_cell.value, self_cell.visited, self_cell.reacheable)
+                    if self_cell.ts > source_cell.ts:   # Self more recent
+                        source.save(self_cell.ts, i, j, self_cell.value, self_cell.visited, self_cell.reacheable)
+                    elif self_cell.ts < source_cell.ts: # Other more recent
+                        self.save(source_cell.ts, i, j, source_cell.value, source_cell.visited, source_cell.reacheable) 
 
-                    elif self_cell.ts < source_cell.ts:
-                        self.save(source_cell.ts, i,j, source_cell.value, source_cell.visited, source_cell.reacheable) 
-
+        # Update area counter:
         if self.area > source.area:
             self.area = source.area
         else:
             source.area = self.area
 
         if show and update: self.plot_info()
-        return update
-
+        
+# NOTE: This class simply generate a black and white image in the form of a 2D numpy array
+# There is a parameter to include walls in the map. This walls are randomly generated.
 class MapDataset:
-    def __init__(self, ARENA_SIZE, BLOCK_SIZE):
-        self.ARENA_SIZE = ARENA_SIZE
-        self.BLOCK_SIZE = BLOCK_SIZE
-        self.dim = self.ARENA_SIZE // self.BLOCK_SIZE
-        self.map = None
-        self.info = None
-    
+    def __init__(self, ARENA_SIZE, BLOCK_SIZE, wall = True):
+        self.ARENA_SIZE = ARENA_SIZE                    # Desired size (squared map)
+        self.BLOCK_SIZE = BLOCK_SIZE                    # Discretization size
+        self.dim = self.ARENA_SIZE // self.BLOCK_SIZE   # Discrete map size
 
-    # methode for printing out maps
-    def __str__(self):
-        str = ""
-        for i in range(self.K):
-            str += "\n"
-            for j in range(self.K):   
-                if self.info[i][j][1] == None:
-                    str += "{:}   ".format(self.info[i][j][1])
-                else:
-                    str += "{:<7}".format(self.info[i][j][1])
-        return str
-    
+        self.map = None 
 
     def generate_map(self, walls = True):
-        # Create empty map
+        # Create empty map as a numpy matrix - every cell is one
         map_image = np.ones((self.ARENA_SIZE, self.ARENA_SIZE), dtype=np.uint8)*255
 
         # Add border walls
@@ -234,21 +206,19 @@ class MapDataset:
         map_image[0:self.BLOCK_SIZE, :] = 0
         map_image[-self.BLOCK_SIZE:self.ARENA_SIZE, :] = 0
 
-        if walls:
-
+        if walls:   # Add walls
             # Randomly generate walls
             num_blocks = random.randint(5,20)
             for _ in range(num_blocks):
 
-                # Select wall seed:
+                # Select wall seed - random point in the map from which a wall grows
                 x = random.randint(1, self.dim - 2) * self.BLOCK_SIZE
                 y = random.randint(1, self.dim - 2) * self.BLOCK_SIZE
-                map_image[x:x+self.BLOCK_SIZE, y:y+self.BLOCK_SIZE] = 0
+                map_image[x:x+self.BLOCK_SIZE, y:y+self.BLOCK_SIZE] = 0     # Set chosen block to 0
 
                 # Randomly block adjacent cells
-                #for _ in range(4):
-                direction = random.choice(['up', 'down', 'left', 'right'])
-                for j in range(random.randint(0,int(self.dim/2))):
+                direction = random.choice(['up', 'down', 'left', 'right'])  # Direction of wall
+                for j in range(random.randint(0,int(self.dim/2))):          # Extension of wall
                     if direction == 'up':
                         x_adj = x - j*self.BLOCK_SIZE
                         if x_adj >= 0:
@@ -266,146 +236,20 @@ class MapDataset:
                         if y_adj < self.ARENA_SIZE:
                             map_image[x:x+self.BLOCK_SIZE, y_adj:y_adj+self.BLOCK_SIZE] = 0
         
-        # TODO: Check white block full connectivity. Unconnected area with smaller area become black        
-        
-        '''visited = [[False for _ in range(self.ARENA_SIZE)] for _ in range(self.ARENA_SIZE)]
-
-        # Mark black pixels as visited:
-        black_pixels = (np.argwhere(map_image == 0))
-        for idx in black_pixels:
-            visited[idx[0]][idx[1]] = True
-
-        for i in range(self.ARENA_SIZE):
-            for j in range(self.ARENA_SIZE):
-                if map_image[i,j] == 255 and not visited[i][j]:
-                    # Start exploring neighboring white pixels
-                    self.flood_fill(map_image,visited, i, j)
-
-        print('Numero de visitas: ',len(np.argwhere(visited==True)))'''
-
         # Select home position:
         white_pixels = np.argwhere(map_image == 255)
         home = tuple(white_pixels[np.random.randint(0,len(white_pixels))]) 
-        #home = [self.BLOCK_SIZE+self.BLOCK_SIZE/2,self.BLOCK_SIZE+self.BLOCK_SIZE/2]   
-
         # Plot home block:     
         i = np.min([self.dim, int(home[0] // self.BLOCK_SIZE)])*self.BLOCK_SIZE
         j = np.min([self.dim, int(home[1] // self.BLOCK_SIZE)])*self.BLOCK_SIZE
+        map_image[i:i+self.BLOCK_SIZE, j:j+self.BLOCK_SIZE] = 150   # Turn block gray
 
-        map_image[i:i+self.BLOCK_SIZE, j:j+self.BLOCK_SIZE] = 150   # Turn block gray, not working
-        #print('Home point: ',home)
-
+        # Save BW image
         self.map = map_image
 
         return self.map, [home[1],home[0]]    
-
-    
-    # Check block connectivity
-    def flood_fill(self, map_image, visited, x, y):
-            # Define the possible moves (up, down, left, right)
-            moves = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-
-            # Set the visited pixel:
-            visited[x][y] = True
-
-            for dx, dy in moves:
-                new_x, new_y = x + dx, y + dy
-                # Check if the new position is within the image bounds
-                if 0 <= new_x < self.ARENA_SIZE and 0 <= new_y < self.ARENA_SIZE:
-                    # Check if the neighboring pixel is white and not visited yet
-                    if map_image[new_x,new_y] == 255 and not visited[new_x][new_y]:
-                        print('Se da')
-                        # Recursively explore the neighboring white pixel
-                        self.flood_fill(map_image, visited, new_x, new_y)
-
-
 
     def get_map(self):
         return self.map
     
 
-    def get_info_map(self):
-        return self.info
-
-    def get_value_at(self, i, j):
-        return self.info[i][j][1]
-
-    def set_info(self, i, j, value):
-        x = int(i*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
-        y = int(j*self.BLOCK_SIZE + self.BLOCK_SIZE/2)
-        self.info[i][j] = Data((x,y), value, True)
-        
-    
-    def plot_info(self):
-        plt.figure(figsize=(8, 6))
-        for i in range(len(self.info)):
-            for j in range(len(self.info[i])):
-                cell = self.info[i][j]
-                color = 'white' if cell.occupation else 'black'
-                plt.plot(cell.centroid[1], cell.centroid[0], marker='s', markersize=15, color=color)  # Plot square
-
-                # Annotate the square with the temperature value
-                if cell.value is not None:
-                    plt.text(cell.centroid[1], cell.centroid[0], f'{cell.value}', ha='center', va='center')
-
-
-        plt.title('Occupation Plot')
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        # Invert the axes
-        #plt.gca().invert_xaxis()
-        plt.gca().invert_yaxis()
-
-'''ARENA_SIZE = 100
-BLOCK_SIZE = 5
-STEPS = 1000
-map_dataset = MapDataset(ARENA_SIZE, BLOCK_SIZE)
-map_image = map_dataset.generate_map(walls=True)
-map_dataset.plot_info()
-
-# Set up the output using map size:
-fig = plt.figure(figsize=(map_image.shape[1]/15 , map_image.shape[0]/15), dpi=100)
-
-ax_map = plt.axes([0, 0, 1, 1])  # Adjust position for map
-
-map_plot = ax_map.imshow(map_image, cmap='gray')
-ax_map.axis('off')
-points, = ax_map.plot([], [], 'bo', lw=0)
-
-# Create swarm:
-# net = SwarmNetwork()
-# mode = "stop"
-# previous_mode = "random"
-
-# Define swarm animation functions here
-
-def init():
-    return map_plot,
-
-def animate(i):
-    # Update swarm
-    # net.one_step(mode)
-    # p = net.visited()
-
-    # Dummy data for demonstration
-    p = np.random.rand(20, 2) * ARENA_SIZE
-
-    x = p[:, 0]
-    y = p[:, 1]
-
-    points.set_data(x, y)
-    
-    print('Step ', i + 1, '/', STEPS, end='\r')
-
-    return map_plot
-
-# Define key press event handler here
-
-# fig.canvas.mpl_connect('key_press_event', toggle_mode)
-
-#anim = FuncAnimation(fig, animate, init_func=init, frames=10, interval=200, blit=True)
-
-# videowriter = animation.FFMpegWriter(fps=60)
-# anim.save("..\output.mp4", writer=videowriter)
-
-plt.show()'''

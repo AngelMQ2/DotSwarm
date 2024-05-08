@@ -6,43 +6,33 @@ from map_dataset import MapDataset, DataSet
 import time
 
 # Environmen hyperparam:
-ARENA_SIDE_LENGTH = 100
-BLOCK_SIZE        = 5
+#ARENA_SIDE_LENGTH = 100
+#BLOCK_SIZE        = 5
 WALLS_ON          = True
 STEPS             = 1000
 
 # Agent hyperparameters:
 MAX_SPEED         = 5e-2
-BASE_SPEED        = 5e-3
 LIDAR_RANGE       = 5
 NUM_RAYS          = 8
-SAFE_SPACE        = 2            # Self safe-space, avoid collitions
-
-# Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 1
-NEIGHTBORS_SPACE  = 20      # Radius of communication area
+SAFE_SPACE        = 2       # Self safe-space, avoid collitions
 
 
 
 # Make the environment toroidal 
-def wrap(z):    
-    return z % ARENA_SIDE_LENGTH
+def wrap(z, arena_side_lenghth):    
+    return z % arena_side_lenghth
+
 
 class agent:
     def __init__(self, id, x, y, vx, vy, home, map, DATASET):
 
-        # Agent ID:
-        self.id = id
+        # Operation parameter 
+        self.id = id         # Agent ID   
+        self.mode = "stop"   # Operation mode (behaviour)d
+        self.N = None        # List of neighbors
 
-        # Agent internal timers:
-        self.update_timer = time.time() + np.random.randint(0,NUMBER_OF_ROBOTS)
-        
-
-        print('Agent ',self.id,' time: ', self.update_timer)
-
-        # Operation mode variable:
-        self.mode = "stop"
-
+        ################### AGENT MOTION #######################
         # Initial position:
         self.x = x
         self.y = y
@@ -59,59 +49,80 @@ class agent:
         # Low-pass filter:
         self.last_vx = self.vx
         self.last_vy = self.vy
-
-        # Home position:
-        self.home = home
-        self.at_home = False
-
-        # List of neightbors
-        self.N = None 
-
+        
+        ################### LIDAR DATA STRUCTURE ##################
         # LIDAR datastructure:
         self.scan = np.zeros((NUM_RAYS,LIDAR_RANGE))
         self.obstacle_score = 0     # Counter to determine wheter there is a infront obstacle
 
-        # Agent's dataset - based on a reference's parameter
+        ##################### DATASET #########################
+
+        # World simulation: BW map to measure obstacles, DATASET to read temperature values
         self.map = map.map            # Black and white image used to navigate
         self.world = DATASET          # External world information (simulate monitoring process)
 
-        self.dataset = DataSet(map,copy=True)
-        self.data_to_save = 0
-        self.update_plot = False
+        # Agent individual dataset:
+        self.dataset = DataSet(map,blind_copy=True)
+        self.data_to_save = 0                                       # Count number of new data --> used to come back home
+        self.update_plot = False                                    # Bool to plot the dataset
+        self.update_timer = time.time() + np.random.randint(0,50)   # Update dataset timer
+
+        # Home position:
+        self.home = self.dataset.get_centroid(home[0],home[1])
+        self.at_home = False
 
         # Variables for exploration
         self.previous_location = self.dataset.get_centroid(self.x,self.y)
         self.desired_point = None
-        
 
+    # Return current position
     def position(self):
         return np.array([self.x, self.y])
-
+    
+    # Set operation mode to follow
     def set_mode(self, mode):
         self.mode = mode
 
-    def norm_velocity(self, keep_yaw = False):
+     # Return list of neighbors 
+    def neightbors(self):
+        return self.N
+    
+    # Set list of neighbors
+    def set_neightbors(self,neightbors):
+        self.N = neightbors
+
+    # Function to normalize and scale the command of velocity accordin to the MAX_SPEED
+    def norm_velocity(self):
         if self.vx != 0 and self.vy != 0:
+            # Normalize and scale:
             self.vx = MAX_SPEED*(self.vx/np.linalg.norm([self.vx,self.vy]))
             self.vy = MAX_SPEED*(self.vy/np.linalg.norm([self.vx,self.vy]))
+
         self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
-        if not keep_yaw:
-            self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
+        self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
+
+    def low_pass_filter(self):
+        w = 0.1    # Weighted new velocity
+
+        # Filtered velocity:
+        new_vx = self.vx*w + self.last_vx*(1-w)
+        new_vy = self.vy*w + self.last_vy*(1-w)
+
+        # Store values
+        self.vx = new_vx
+        self.vy = new_vy
+        self.last_vx = new_vx
+        self.last_vy = new_vy
+
+    ################### MAIN OPERATION FUNCTION ########################
 
     def one_step(self):
-        
-        # Read LIDAR:
+        # 1º Read LIDAR:
         self.lidar_scan()
 
-        # Take action:
+        # 2º Take action based on current behavior:
         if self.mode == "random":
-                self.forward()
-
-        elif self.mode == "explore":
-            if self.data_to_save > 500:   # If number of data discover greater than 5 come back home for updating map
-                self.homing()
-            else:
-                self.exploration()
+            self.forward()
 
         elif self.mode == "cluster":
             self.cluster()
@@ -122,29 +133,32 @@ class agent:
         elif self.mode == "dispersion":
             self.dispersion()
 
+        elif self.mode == "explore":
+            if self.data_to_save > 5:   # If number of data discover greater than 5 come back home for updating map
+                self.homing()
+            else:
+                self.exploration()
+
         else:   # Do nothing
             self.stop()
 
-        # Normalize velocity vector:
-        #self.norm_velocity()
+        if self.mode != "explore": self.desired_point = None    # Needed to reset exploration
 
-        # Check collition:
+        # 3º Check collition:
         self.avoid_collision()     
 
-        # Normalize velocity vector:
+        # 4º Normalize velocity vector:
         self.norm_velocity()
+        self.low_pass_filter()  #Low-pass filter - smooth movements
 
-        # Low-pass filter:
-        self.low_pass_filter()
-
-        # Update state:
-        self.x = wrap(self.x + self.vx)
-        self.y = wrap(self.y + self.vy)
+        # 5º Update state:
+        self.x = wrap(self.x + self.vx, self.dataset.arena_size)
+        self.y = wrap(self.y + self.vy, self.dataset.arena_size)
         self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
         self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
 
-        # Check if close to home position:
-        if np.linalg.norm([self.x-self.home[0],self.y-self.home[1]]) < BLOCK_SIZE:
+        # 6º Check if close to home position:
+        if np.linalg.norm([self.x-self.home[0],self.y-self.home[1]]) < self.dataset.K:  # If smaller than block size
             self.at_home = True
             self.data_to_save = 0
         else:
@@ -153,84 +167,22 @@ class agent:
         # Check map values:
         self.monitoring()
         self.update_map()
-        self.track_location()
+        self.track_location()        
 
-        if self.id == 0 and self.update_plot: 
-            self.dataset.plot_info()
-            self.update_plot = False
+######################## SENSING FUNCTIONS #################################
 
-        
-
-    def neightbors(self):
-        return self.N
-
-    def set_neightbors(self,neightbors):
-        self.N = neightbors
-
+    # Function to read the world value for the current position
     def monitoring(self):
-        if self.dataset.get_value(self.x, self.y) != self.world.get_value(self.x,self.y):
-            
-            self.update_plot = True
-            self.data_to_save += 1
-            value = self.world.get_value(self.x, self.y)
-            self.dataset.store_value(self.x, self.y, value, True, True)
+        if self.dataset.get_value(self.x, self.y) != self.world.get_value(self.x,self.y):   # If not registered/updated
+            self.update_plot = True     # Enable plot
+            self.data_to_save += 1      # New data discovered
+            value = self.world.get_value(self.x, self.y)                    # Read value from world dataset
+            self.dataset.store_value(self.x, self.y, value, True, True)     # Save value in individual dataset
 
-    def update_map(self):
-        t = time.time()
-        if abs(self.update_timer - t) > NUMBER_OF_ROBOTS:
-            for n in self.N:
-                self.dataset.merge(n.dataset, show = False)
-            self.update_timer = t
-            print('Update id: ',self.id)
-
-    def low_pass_filter(self):
-
-        w = 0.1    # Weighted new velocity
-
-        new_vx = self.vx*w + self.last_vx*(1-w)
-        new_vy = self.vy*w + self.last_vy*(1-w)
-
-        self.vx = new_vx
-        self.vy = new_vy
-
-        self.last_vx = new_vx
-        self.last_vy = new_vy
-
-    def avoid_collision(self):
-
-        self.norm_velocity(keep_yaw = True)
-
-        if self.vx != 0 and self.vy != 0:
-            # Avoid collision with other agents:
-            for n in self.N:
-                distance = np.linalg.norm(self.position() - n.position()) + 0.001
-                if distance < SAFE_SPACE:
-                    # Calculate the adjustment vector
-                    adjustment = [float(diff) for diff in (self.position() - n.position())]
-                    adjustment /= distance  # Normalize to unit vector
-                    adjustment *= self.V*np.exp((SAFE_SPACE-distance)/(distance))
-                    self.vx += adjustment[0]
-                    self.vy += adjustment[1]
-            
-            # Avoid collision with env obstables:
-            adjustment = [0,0]
-            for i,angle in enumerate(np.linspace(0, 2*np.pi, NUM_RAYS, endpoint=False)):
-                # Director vector:
-                dx = -np.cos(angle)
-                dy = -np.sin(angle)
-                
-                # Count non-cero element in the scan - correspond to distance to distance
-                distance = np.count_nonzero(self.scan[i])
-                #avoid_factor = ((LIDAR_RANGE - distance))  #TODO: Review cero counting rather than incremental counting
-                if distance < LIDAR_RANGE:
-                    #scale = self.V*np.clip(np.exp(-distance/LIDAR_RANGE),0,1)
-                    scale = self.V*np.clip(np.exp(1/np.max([0.1,distance])),0,3)/2
-                    self.vx += scale*dx
-                    self.vy += scale*dy
-
+    # Function to simulate the LIDAR reading cycle
+    # NOTE: Lidar fixed orientation, not rely on agent's yaw angle
     def lidar_scan(self):
-
-        # Sweep circumference centred on the agent - starting from the agent's orientation
+        # Sweep circumference centred on the agent 
         for i,angle in enumerate(np.linspace(0,  2*np.pi, NUM_RAYS, endpoint=False)):
             # Director vector:
             dx = np.cos(angle)
@@ -239,74 +191,108 @@ class agent:
             # Scan:
             ray = []
             for step in range(LIDAR_RANGE):
+                # Compute ray trajectory points:
                 x = int(self.x + dx * step)
                 y = int(self.y + dy * step)
-                if 0 <= x < ARENA_SIDE_LENGTH and 0 <= y < ARENA_SIDE_LENGTH:
-                    ray.append(self.map[y, x])
 
-                    # Mark block as unreacheable:
+                if 0 <= x < self.dataset.arena_size and 0 <= y < self.dataset.arena_size:
+                    ray.append(self.map[y, x])  # Save Black or white map value for (x,y) in ray trajectory
+
+                    # If (x,y) is a wall then mark block as unreacheable:
                     if self.map[y,x] == 0 and self.dataset.get_reacheable(x,y):
                         self.dataset.store_value(x,y, None, False, False)
                         self.update_plot = True
                 else:
                     ray.append(0)  # If ray goes out of bounds, consider it as hitting an obstacle
 
+            # Store ray
             ray = np.array(ray)
             self.scan[i] = ray
 
+    # Update self dataset with neightbors'
+    def update_map(self):
+        t = time.time()
+        if abs(self.update_timer - t) > 50:     # If 50 sec from prev. update
+            for n in self.N:
+                self.dataset.merge(n.dataset)   # Merge self map and neightbor
+            self.update_timer = t
 
+    ################### BEHAVIOR FUNCTIONS #####################
+
+    def avoid_collision(self):
+        self.norm_velocity()    # Need to normalize vector
+       
+        if self.vx != 0 and self.vy != 0:
+            # AVOID COLLISION WITH NEIGHBORS
+            for n in self.N:
+                distance = np.linalg.norm(self.position() - n.position()) + 0.001
+                if distance < SAFE_SPACE:
+                    # Calculate the adjustment vector
+                    adjustment = [float(diff) for diff in (self.position() - n.position())]
+                    adjustment /= distance  # Normalize to unit vector
+                    adjustment *= self.V*np.exp((SAFE_SPACE-distance)/(distance))   # Scale based on exponential inversely proportional to distance
+                    self.vx += adjustment[0]
+                    self.vy += adjustment[1]
+            
+            # AVOID COLLISION WITH ENVIRONMENT OBSTACLES
+            adjustment = [0,0]
+            for i,angle in enumerate(np.linspace(0, 2*np.pi, NUM_RAYS, endpoint=False)):
+                # Director vector:
+                dx = -np.cos(angle)
+                dy = -np.sin(angle)
+                # Count non-cero element in the scan - correspond to distance to distance
+                distance = np.count_nonzero(self.scan[i])
+                if distance < LIDAR_RANGE:
+                    scale = self.V*np.clip(np.exp(1/np.max([0.1,distance])),0,3)/2   # Scale based on exponential inversely proportional to distance
+                    self.vx += scale*dx
+                    self.vy += scale*dy
+
+    # Behavior to move randomly. If agent is stoped then asign random stored velocity
+    # NOTE: Emerging behavior such that the avoid collision function modify the velocity vector freely. Result is agent moving forward and bouncing in obstacles
     def forward(self):
         # Randomly change the velocity:
         if self.vx == 0 and self.vy == 0:
             self.vx = self.vx0
             self.vy = self.vy0
 
-  
+    # Function to stop the agent
     def stop(self):
         self.vx = 0
         self.vy = 0
-    
+
+    # Behavior to come back home
     def homing(self):
-        
         # Difference position neightbors-agent 
         delta_x = 0
         delta_y = 0
-
         [x,y] = self.position()
         
         # Distance to desired point:     
         delta_x = (self.home[0] - x)
         delta_y = (self.home[1] - y)
 
+        # Modify velocity vector
         self.vx = delta_x*MAX_SPEED
         self.vy = delta_y*MAX_SPEED
 
+    # Function to gather neighbor agents into a region
     def cluster(self):
         # Difference position neightbors-agent 
         delta_x = 0
         delta_y = 0
-
         [x,y] = self.position()
         
-        if self.neightbors() == []:
-            delta_x += MAX_SPEED #*np.random.uniform(0,1)
-            delta_y += MAX_SPEED #*np.random.uniform(0,1)
+        if self.neightbors() == []: # If no neightbor move fordward freely
+            self.forward()
         else:
             # Control law:
             for n in self.neightbors():
                 [n_x, n_y] = [n.x,n.y]
-                delta_x += (n_x - x) #*MAX_SPEED
-                delta_y += (n_y - y) #*MAX_SPEED
-
-            #delta_x = delta_x/np.linalg.norm([delta_x,delta_y])
-            #delta_y = delta_y/np.linalg.norm([delta_x,delta_y])
-        
-        self.vx = delta_x
-        self.vy = delta_y
-
-        #self.vx = delta_x*MAX_SPEED
-        #self.vy = delta_y*MAX_SPEED
-
+                delta_x += (n_x - x)
+                delta_y += (n_y - y) 
+            self.vx = delta_x
+            self.vy = delta_y
+    
     def dispersion(self):
         # Difference position neightbors-agent
         umbral = 10
@@ -335,7 +321,6 @@ class agent:
             else:   # Atraction
                 dispersion_force += diff*atraction_factor
 
-
         # Asign velocity:
         if neightbors_too_close != 1:
             self.vx = dispersion_force[0]
@@ -353,15 +338,16 @@ class agent:
         current_index = self.dataset.index(self.x, self.y)
 
         if prev_index != current_index:
-            self.previous_location = self.dataset.get_centroid(prev_y, prev_x)
-            
-    def choose_next_block(self):
-    # Choose blocks randomly from a list of (Reacheable,Non-explored). 
+            self.previous_location = self.dataset.get_centroid(prev_x, prev_y)
+    
+    # NOTE: Choose blocks randomly from a list of (Reacheable,Non-explored) for exploration algorithm
     # Filter first those block that are reacheables, then the non-explored (else reacheables only). List of candidates block, choose randomly weighted
-
-        self_idx = self.dataset.index(self.x, self.y)
-        self_previous_idx = self.dataset.index(self.previous_location[0],self.previous_location[1])
-        nodes_to_explore = [(1, 1), (1, 0), (1, -1), (0, 1), (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+    def choose_next_block(self):
+        #self_previous_idx = self.dataset.index(self.previous_location[0],self.previous_location[1])
+        #nodes_to_explore = [(1, 1), (1, 0), (1, -1), (0, 1), (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+        
+        self_idx = self.dataset.index(self.x, self.y)           # Get current block indexs
+        nodes_to_explore = [(1, 0), (0, 1), (0, -1), (-1, 0)]   # 4-neightbor to explore
 
         # Nodes candidates:
         reacheable_centroids = []
@@ -374,154 +360,144 @@ class agent:
 
             # Check boundaries:
             size = self.dataset.size()
-            if i < size[0] and j < size[1] and i != self_previous_idx[0] and j != self_previous_idx[1]:
+            if i < size[0] and j < size[1]: #and i != self_previous_idx[0] and j != self_previous_idx[1]:
                 info = self.dataset.get_info(i,j)
+                centroid = (info.centroid[1], info.centroid[0])
                 # Keep only reacheable:
                 if info.reacheable:
                     # Keep only un-discovered:
-                    reacheable_centroids.append(info.centroid)
+                    reacheable_centroids.append(centroid)
                     if not info.visited:
-                        non_visited_centroids.append(info.centroid)
+                        non_visited_centroids.append(centroid)
+ 
+        if non_visited_centroids == []:    # If no un-visited block around just go forward freely
+            self.desired_point = None
+            return False
         
-        if non_visited_centroids == []: non_visited_centroids = reacheable_centroids    # If no block no discovered then operate with the reacheables
-
-        # Option 1: Compute distance to previous location, used as prior probabilities
-        dist_array = np.array([np.linalg.norm([self.previous_location[0] - centroid[0], self.previous_location[1] - centroid[1]]) for centroid in non_visited_centroids])
-        prior_prob = np.array(dist_array/np.sum(dist_array))
-
-        #selected_idx = np.random.choice(range(len(non_visited_centroids)), p = prior_prob)
-
-        #Optimon 2: Select radmoly one form non-visited
-        selected_idx = np.random.choice(range(len(non_visited_centroids)))
-        selected_centroid = non_visited_centroids[selected_idx]
-        self.desired_point = selected_centroid
-    
-        print(selected_centroid)
-
-    def check_reacheable_block(self):
-        
-        # Count zero values of ahead lidar ray:
-        ray = self.scan[0]  # Corresponding of ray at direction self.yaw (head of agent)
-        zero_val = len(ray) - np.count_nonzero(ray)
-        self.obstacle_score += zero_val
-
-        # Reset score:
-        if zero_val == 0 and self.obstacle_score > 0: 
-            self.obstacle_score -= 10
-
-        if self.obstacle_score > 100: return True
-        else: return False
-
+        else:                              # If any un-visited block around
+            #Distance to candidate centroids
+            dist_array = np.array([np.linalg.norm([self.x - centroid[0], self.y - centroid[1]]) for centroid in non_visited_centroids])
+            # Prior probability - greater probability those centroid further away from current position
+            prior_prob = np.array(dist_array/np.sum(dist_array))
+            selected_idx = np.random.choice(range(len(non_visited_centroids)), p = prior_prob)
+            self.desired_point = non_visited_centroids[selected_idx]
+            
+            return True
+       
+    # Behavior of monitoring
     def exploration(self):
+        found_point = False
+        # Check if desired point has not been set / current desired point is not reacheable
+        if self.desired_point == None or not self.dataset.get_reacheable(self.desired_point[0],self.desired_point[1]):
+            found_point = self.choose_next_block()
 
-        if self.desired_point == None:
-            self.choose_next_block()
-        
-        # Control law:
-        [x,y] = self.position()
-        delta_x = self.desired_point[0] - x
-        delta_y = self.desired_point[1] - y
+        # If not unvisited block to explore just go forward
+        if found_point == False:
+            self.forward()
+        else:
+            # Control law:
+            [x,y] = self.position()
+            delta_x = self.desired_point[0] - x
+            delta_y = self.desired_point[1] - y
 
-        # Check if has reach point:
-        if np.linalg.norm([self.desired_point[0]-x, self.desired_point[1]-y]) < SAFE_SPACE:
-            self.desired_point = None # Choose new point to tracj
-            # Information (ts, temperature, reacheable, visited) already stored by monitoring
-        # Check if block is unreacheable:
-        #if self.check_reacheable_block(): # If block is unreacheable
-        #    # Mark block as unreacheable:
-        #    self.dataset.store_value(self.desired_point[0], self.desired_point[1], None, False, False)
-        #    print('WALL')
-        #    self.desired_point = None
+            # Check if has reach point:
+            if np.linalg.norm([self.desired_point[0]-x, self.desired_point[1]-y]) < SAFE_SPACE:
+                self.desired_point = None # Choose new point to tracj
 
-        self.vx = delta_x
-        self.vy = delta_y
+            self.vx = delta_x
+            self.vy = delta_y
 
 class SwarmNetwork():
+    def __init__(self, home, map, dataset, num_agent, communication_radium, start_home = False):
 
-    def __init__(self, home, map, dataset, start_home = False):
+        # Save hyperparameters:
+        self.num_agents = num_agent
+        self.neightbor_space = communication_radium
 
+        #################### CREATE AGENTS #####################################
         # Set random intial point:
-
-        x_0 = [] #np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
-        y_0 = [] #np.random.uniform(low=0, high=ARENA_SIDE_LENGTH, size=(NUMBER_OF_ROBOTS,))
+        x_0 = [] 
+        y_0 = [] 
 
         # Ensure not to spawn in wall
         self.map = map.map
-        for i in range(NUMBER_OF_ROBOTS):
+        for i in range(self.num_agents):
             if start_home == True:
                 x, y = home
             else:
-                x, y = self.generate_randome_start()
+                x, y = self.generate_randome_start(dataset.arena_size)
             x_0.append(x)
             y_0.append(y)
 
-        # Velocities random:
-        vx = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(NUMBER_OF_ROBOTS,))
-        vy = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(NUMBER_OF_ROBOTS,))
+        # list of random velocities:
+        vx = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(self.num_agents,))
+        vy = np.random.uniform(low=-MAX_SPEED, high=MAX_SPEED, size=(self.num_agents,))
 
-        # Agents:
-        self.index = np.arange(NUMBER_OF_ROBOTS)
-        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i],home,map,dataset) for i in range(NUMBER_OF_ROBOTS)] # List of agents (own self-position)
+        # Create agents::
+        self.index = np.arange(self.num_agents)
+        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i],home,map,dataset) for i in range(self.num_agents)] # List of agents (own self-position)
 
-        # Adjacency and Laplacian matrix:
-        self.Adj = np.zeros((NUMBER_OF_ROBOTS,NUMBER_OF_ROBOTS))
-        self.L = np.zeros((NUMBER_OF_ROBOTS,NUMBER_OF_ROBOTS))
+        # Adjacency matrix - used for evaluation
+        self.Adj = np.zeros((self.num_agents,self.num_agents))  
 
-        # Set initial topology:
+        # Set initial topology - neighboors relationships
         self.update_Topology()
 
-        # Generate common maps:
-        self.global_map = DataSet(map,copy=True)
+        ################# DATASET ##################
+        self.global_map = DataSet(map,blind_copy=True)
         self.update_map()
+        self.init_timer = time.time()
         
     
-    def generate_randome_start(self):
-        x = np.random.randint(low=0, high=ARENA_SIDE_LENGTH)
-        y = np.random.randint(low=0, high=ARENA_SIDE_LENGTH)
+    def generate_randome_start(self, arena_size):
+        x = np.random.randint(low=0, high=arena_size)
+        y = np.random.randint(low=0, high=arena_size)
 
         if self.map[y,x] == 0:
-            return self.generate_randome_start()
+            return self.generate_randome_start(arena_size)
         else:    
             return x, y
         
+    # Return list of agents position
     def state(self):
         return np.array([agent.position() for agent in self.agents])
 
+    ########## MAIN FUNCTION ###################
     def one_step(self, mode = "stop"):
-
+        t = time.time()
         for agent in self.agents:
-            agent.set_mode(mode)
-            agent.one_step()
+            agent.set_mode(mode)    # Control behavior
+            agent.one_step()        # Agent main function
             
-            if agent.at_home == True:
+            if agent.at_home == True:   # If agent at home call update ground station map
+                show = abs(t - self.init_timer) > 10
                 # Update overall map:
-                update = self.global_map.merge(agent.dataset,show=False)
+                self.global_map.merge(agent.dataset, show = show)
 
         # Update agents neightbourhood:
         self.update_Topology()
 
+    # First update of every map:
     def update_map(self):
         for agent in self.agents:
-            if agent.id == 0:
-                self.global_map.merge(agent.dataset,show=True)
-            else:
-                self.global_map.merge(agent.dataset,show=False)
-            
+            self.global_map.merge(agent.dataset,show=False)
+
+    # Update neighbors relationship        
     def update_Topology(self):
-        self.Adj = np.eye(NUMBER_OF_ROBOTS*NUMBER_OF_ROBOTS)
+        self.Adj = np.eye(self.num_agents*self.num_agents)
 
         state = self.state()
         neightbors = [] # List of list of neightbors
+
         # For every agent in the swarm
         for agent in self.agents:
-
             # Check distance to every other agent
             dist_neighbors = np.linalg.norm(agent.position() - state,axis=1)
             # Select closest agents:
             sort_id = self.index[np.argsort(dist_neighbors)[1:]]
             neightbors_id = []
             for idx in sort_id:
-                if dist_neighbors[idx] < NEIGHTBORS_SPACE:
+                if dist_neighbors[idx] < self.neightbor_space:
                     neightbors_id.append(idx)
 
             neightbors.append(neightbors_id)
@@ -536,91 +512,4 @@ class SwarmNetwork():
                     self.Adj[other_agent.id, agent.id] = 1 
             # Update agent's neightbour:
             agent.set_neightbors(temp_neightbor)
-
-        # Update Adjacency matrix:
-        # Double neightbour correlation:    To be neightbors, 2 agents must be neightbors respectively
-        '''for agent in self.agents:
-            c_neight = agent.neightbors()
-
-            for j,n in enumerate(c_neight):
-                self.Adj[agent.id, n] = 1
-                self.Adj[n, agent.id] = 1 
             
-            # Update agent's neightbor:
-            agent.set_neightbors(c_neight)'''
-            
-
-def toggle_mode(event):
-    global mode, previous_mode
-    if event.key == 'up':
-        mode = "random"
-    elif event.key == 'down':
-        mode = "cluster"
-    elif event.key == ' ':
-        if mode == "stop":
-            mode = previous_mode
-        else:
-            previous_mode = mode
-            mode = "stop"
-    elif event.key == 'enter':
-        mode = "home"
-    elif event.key == 'left':
-        mode = "dispersion"
-
-'''
-################# PLOT ########################
-
-
-# Create Map:
-map_dataset = MapDataset(ARENA_SIDE_LENGTH, BLOCK_SIZE)
-BW_MAP,home = map_dataset.generate_map(walls=WALLS_ON)
-
-# Generate random dataset --> Map discretization with value that agent may infer
-DATASET = DataSet(map_dataset)
-DATASET.plot_info()
-
-
-# The agent operate with map and dataset variables to simulate the exploration and data adqusition task.
-
-
-# Set up the output using map size:
-fig = plt.figure(figsize=(BW_MAP.shape[1]/15 , BW_MAP.shape[0]/15), dpi=100)
-ax_map = plt.axes([0, 0, 1, 1])  # Adjust position for map
-map_plot = ax_map.imshow(BW_MAP, cmap='gray')
-ax_map.axis('off')
-points, = ax_map.plot([], [], 'bo', lw=0)
-
-
-# Create swarm:
-
-net = SwarmNetwork(home,map_dataset,start_home=False)
-mode = "stop"
-previous_mode = "random"
-
-
-def init():
-    points.set_data([], [])
-    return points,
-
-def animate(i):
-
-    net.one_step(mode)
-    
-    # Get points
-    p = net.state()
-    x = p[:, 0]
-    y = p[:, 1]
-
-    points.set_data(x, y)
-    print('Step ', i + 1, '/', STEPS, end='\r')
-
-    return points,
-
-fig.canvas.mpl_connect('key_press_event', toggle_mode)
-
-anim = FuncAnimation(fig, animate, init_func=init,
-                               frames=STEPS, interval=1, blit=True)
-
-videowriter = animation.FFMpegWriter(fps=60)
-#anim.save("..\output.mp4", writer=videowriter)
-plt.show()'''

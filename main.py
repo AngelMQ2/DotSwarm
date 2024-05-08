@@ -19,7 +19,7 @@ NUM_RAYS          = 8
 SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 1
+NUMBER_OF_ROBOTS  = 20
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
 
 # Control behavior with the keys:
@@ -66,6 +66,14 @@ def eval_cluster(net):
             n_cluster += 1
 
     return n_cluster
+
+
+def eval_exploration(net):
+    # Look at covered area in exploration:
+    current_area = net.global_map.covered_area()
+    total_area = DATASET.covered_area()
+
+    return current_area / total_area
 
 def get_centroid(net):
     p = net.state()
@@ -121,7 +129,7 @@ ax_cl.set_ylim(0, NUMBER_OF_ROBOTS)  # Adjust ylim based on your data range
 #cl_plot, = ax_cl.plot([], [], lw=2)
 
 # Create swarm:
-net = SwarmNetwork(home,map_dataset,DATASET,start_home=True)
+net = SwarmNetwork(home,map_dataset,DATASET, NUMBER_OF_ROBOTS, NEIGHTBORS_SPACE, start_home=True)
 mode = "dispersion"
 previous_mode = "dispersion"
 
@@ -136,8 +144,9 @@ def animate(i):
     
     # Evaluation
     #n_cluster = eval_cluster(net)
-    max_dispersion = eval_dispersion(net)
-
+    #max_dispersion = eval_dispersion(net)
+    covered_area_ration = eval_exploration(net)
+    print('Cover area ration: ', covered_area_ration)
     #print('Number of cluster: ', n_cluster)
     #print('Max dispersion distance: ',max_dispersion)
 
