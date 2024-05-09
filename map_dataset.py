@@ -6,6 +6,7 @@ import random
 import sys
 import time
 
+
 sys.setrecursionlimit(1500000)
 
 
@@ -51,13 +52,16 @@ class DataSet:
         self.last_update = 0    # Time counter to determine next update
 
     # Methode for printing out maps
-    def _str_(self):
+    def __str__(self):
         str = ""
         for i in range(self.dim):
             str += "\n"
             for j in range(self.dim):   
                 if self.info[i][j].value == None:
-                    str += "{:}   ".format(self.info[i][j].value)
+                    if self.info[i][j].reacheable:
+                        str += "____   "
+                    else:
+                        str += "WALL   "
                 else:
                     str += "{:<7}".format(self.info[i][j].value)
         return str
@@ -196,8 +200,9 @@ class MapDataset:
 
         self.map = None 
 
-    def generate_map(self, walls = True):
+    def generate_map(self, walls = True, save = False):
         # Create empty map as a numpy matrix - every cell is one
+
         map_image = np.ones((self.ARENA_SIZE, self.ARENA_SIZE), dtype=np.uint8)*255
 
         # Add border walls
@@ -246,8 +251,35 @@ class MapDataset:
 
         # Save BW image
         self.map = map_image
+        
+        # Save as np file
+        if save:
+            np.save(f"map_{int(time.time())}", self.map)
 
-        return self.map, [home[1],home[0]]    
+        return self.map, [home[1],home[0]]  
+    
+    def load_map(self, walls = True):
+        print("\nPut in the file name, or chose map 1, 2, or 3 with numbers.\n"
+              + "Press \"r\" for new random map")
+        file_name = input()
+        if file_name == "1":
+            print("load map 1")
+            self.map = np.load("map_1_easy.npy")
+        elif file_name == "2":
+            print("load map 2")
+            self.map = np.load("map_2_medium.npy")
+        elif file_name == "3":
+            print("load map 3")
+            self.map = np.load("map_3_hard.npy")
+        elif file_name == "r":
+            print("generate new map")
+            return self.generate_map(walls)
+        elif file_name == "rs": # generate new map and save
+            print("generate new map and save")
+            return self.generate_map(walls, save =  True)
+        else:
+            self.map = np.load(file_name)
+        return self.map, [np.where(self.map == 150)[1][0], np.where(self.map == 150)[0][0]]
 
     def get_map(self):
         return self.map

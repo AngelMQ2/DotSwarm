@@ -1,3 +1,4 @@
+from imp import load_module
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
@@ -21,6 +22,10 @@ SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 # Swarm hyperparameters:
 NUMBER_OF_ROBOTS  = 20
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
+
+# For not printing out all coverd area all the time
+global privious_covered_area_ration
+privious_covered_area_ration = 0
 
 # Control behavior with the keys:
 def toggle_mode(event):
@@ -106,7 +111,7 @@ def eval_dispersion(net):
 
 # Create Map:
 map_dataset = MapDataset(ARENA_SIDE_LENGTH, BLOCK_SIZE)
-BW_MAP,home = map_dataset.generate_map(walls=WALLS_ON)
+BW_MAP,home = map_dataset.load_map(walls=WALLS_ON)
 
 # Generate random dataset --> Map discretization with value that agent may infer
 DATASET = DataSet(map_dataset)
@@ -138,7 +143,10 @@ def init():
     points.set_data([], [])
     return points,
 
+
+
 def animate(i):
+    global privious_covered_area_ration
 
     net.one_step(mode)
     
@@ -146,7 +154,9 @@ def animate(i):
     #n_cluster = eval_cluster(net)
     #max_dispersion = eval_dispersion(net)
     covered_area_ration = eval_exploration(net)
-    print('Cover area ration: ', covered_area_ration)
+    if covered_area_ration - privious_covered_area_ration != 0:
+        print('Cover area ration: ', covered_area_ration)
+        privious_covered_area_ration = covered_area_ration
     #print('Number of cluster: ', n_cluster)
     #print('Max dispersion distance: ',max_dispersion)
 

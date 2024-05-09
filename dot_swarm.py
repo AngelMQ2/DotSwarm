@@ -1,3 +1,4 @@
+from tkinter import SEL
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation
@@ -25,7 +26,7 @@ def wrap(z, arena_side_lenghth):
 
 
 class agent:
-    def __init__(self, id, x, y, vx, vy, home, map, DATASET):
+    def __init__(self, id, x, y, vx, vy, home, map, DATASET, num_agent):
 
         # Operation parameter 
         self.id = id         # Agent ID   
@@ -60,12 +61,14 @@ class agent:
         # World simulation: BW map to measure obstacles, DATASET to read temperature values
         self.map = map.map            # Black and white image used to navigate
         self.world = DATASET          # External world information (simulate monitoring process)
+        self.num_agent = num_agent
+        self.time = time.time()
 
         # Agent individual dataset:
         self.dataset = DataSet(map,blind_copy=True)
         self.data_to_save = 0                                       # Count number of new data --> used to come back home
         self.update_plot = False                                    # Bool to plot the dataset
-        self.update_timer = time.time() + np.random.randint(0,50)   # Update dataset timer
+        
 
         # Home position:
         self.home = self.dataset.get_centroid(home[0],home[1])
@@ -212,10 +215,11 @@ class agent:
     # Update self dataset with neightbors'
     def update_map(self):
         t = time.time()
-        if abs(self.update_timer - t) > 50:     # If 50 sec from prev. update
+        if (int(t) + self.id) % self.num_agent == 0 and time.time() - self.time > 5:     # If 50 sec from prev. update
+            print(f"Updating map agent {self.id} time {t} ")#
+            self.time = t
             for n in self.N:
                 self.dataset.merge(n.dataset)   # Merge self map and neightbor
-            self.update_timer = t
 
     ################### BEHAVIOR FUNCTIONS #####################
 
@@ -435,7 +439,7 @@ class SwarmNetwork():
 
         # Create agents::
         self.index = np.arange(self.num_agents)
-        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i],home,map,dataset) for i in range(self.num_agents)] # List of agents (own self-position)
+        self.agents = [agent(i,x_0[i],y_0[i],vx[i],vy[i],home,map,dataset, num_agent) for i in range(self.num_agents)] # List of agents (own self-position)
 
         # Adjacency matrix - used for evaluation
         self.Adj = np.zeros((self.num_agents,self.num_agents))  
@@ -447,6 +451,7 @@ class SwarmNetwork():
         self.global_map = DataSet(map,blind_copy=True)
         self.update_map()
         self.init_timer = time.time()
+        self.update_timer = time.time()
         
     
     def generate_randome_start(self, arena_size):
@@ -469,10 +474,12 @@ class SwarmNetwork():
             agent.set_mode(mode)    # Control behavior
             agent.one_step()        # Agent main function
             
-            if agent.at_home == True:   # If agent at home call update ground station map
+            if agent.at_home == True and abs(t - self.update_timer) > 1.5:   # If agent at home call update ground station map
                 show = abs(t - self.init_timer) > 10
                 # Update overall map:
                 self.global_map.merge(agent.dataset, show = show)
+                print(self.global_map)
+                self.update_timer = time.time()
 
         # Update agents neightbourhood:
         self.update_Topology()
