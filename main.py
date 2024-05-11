@@ -125,7 +125,7 @@ fig = plt.figure(figsize=(BW_MAP.shape[1]/15 , BW_MAP.shape[0]/15), dpi=100)
 ax_map = plt.axes([0, 0, 1, 1])  # Adjust position for map
 map_plot = ax_map.imshow(BW_MAP, cmap='gray')
 ax_map.axis('off')
-points, = ax_map.plot([], [], 'bo', lw=0)
+points, = ax_map.plot([], [], 'mo', lw=0)
 
 # Evaluation figures:
 fig_cl, ax_cl = plt.subplots()

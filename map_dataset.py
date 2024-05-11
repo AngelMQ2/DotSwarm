@@ -17,7 +17,7 @@ Data = namedtuple("Data",['ts','centroid','value','visited','reacheable'])
 class DataSet:
     # NOTE: This class generate a matrix which discretize the space given by the black & white map
     # If is not a copy, then the map info is complete available. In case it is a blind_copy, then all the matrix block are set as reacheable and non-visited
-    def __init__(self, map, blind_copy = False):  
+    def __init__(self, map, blind_copy = False, save_home = False):  
         # Get dimension from white and black image (map)
         self.arena_size = map.ARENA_SIZE
         self.K = map.BLOCK_SIZE     # Key of the Hash table -> debide continuous (x,y) coordinates by this value to obtain the corresponding place in the matrix
@@ -38,6 +38,8 @@ class DataSet:
                 value = int(np.random.randint(-20,60))    # Temperature value, randomly chosen     
                 
                 # Determine wheter is a reacheable block (white) or non-reacheable block (black)
+                if save_home and map.map[x,y] == 150:
+                    self.home = [i, j]
                 if map.map[x,y] == 255 and not blind_copy:      # Ensure is not a copy, otherwhise no value is stored as it have to be discovered
                     info_map[i][j] = Data(t,(x,y), value, True, True)
                     area_cont += 1
@@ -58,12 +60,14 @@ class DataSet:
             str += "\n"
             for j in range(self.dim):   
                 if self.info[i][j].value == None:
-                    if self.info[i][j].reacheable:
-                        str += "____   "
+                    if self.home[0] == i and self.home[1] == j:
+                        str += " HOME "
+                    elif self.info[i][j].reacheable and not self.info[i][j].visited:
+                        str += " ____ "
                     else:
-                        str += "WALL   "
+                        str += "######"
                 else:
-                    str += "{:<7}".format(self.info[i][j].value)
+                    str += " {:<5}".format(self.info[i][j].value)
         return str
     
     # Function to plot in real-time the dataset matrix:
@@ -277,6 +281,8 @@ class MapDataset:
         elif file_name == "rs": # generate new map and save
             print("generate new map and save")
             return self.generate_map(walls, save =  True)
+        elif file_name == "nw":
+            return self.generate_map(walls= False)
         else:
             self.map = np.load(file_name)
         return self.map, [np.where(self.map == 150)[1][0], np.where(self.map == 150)[0][0]]
