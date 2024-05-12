@@ -237,7 +237,6 @@ def animate(i):
     global mode
     global privious_covered_area_ration
 
-    net.delete_agent()
 
     #reset timer each time the behavior is changed
     if timer_reset:
@@ -250,6 +249,7 @@ def animate(i):
 
     #when set time reached stop simulation
     if simulation_seconds<current_time:
+        print("closing the plot now")
         plt.close()
 
 
@@ -279,7 +279,7 @@ def animate(i):
         time_axi.append(current_time)
         value_axi.append(ratio_agent_at_home)
 
-        print('Ratio number of agent at home: ', (ratio_agent_at_home / agents_alive) * 100)
+        print('Ratio number of agent at home: ', ratio_agent_at_home* 100)
 
     elif mode=="cluster":
         n_cluster = eval_cluster(net)
