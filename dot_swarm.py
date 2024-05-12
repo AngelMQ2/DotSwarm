@@ -5,6 +5,7 @@ from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 from map_dataset import MapDataset, DataSet
 import time
+import random
 
 # Environmen hyperparam:
 #ARENA_SIDE_LENGTH = 100
@@ -477,7 +478,7 @@ class SwarmNetwork():
             if agent.at_home == True and abs(t - self.update_timer) > 1.5:   # If agent at home call update ground station map
                 show = abs(t - self.init_timer) > 10
                 # Update overall map:
-                self.global_map.merge(agent.dataset, show = show)
+                self.global_map.merge(agent.dataset, show = False)
                 print(self.global_map)
                 self.update_timer = time.time()
 
@@ -519,4 +520,4 @@ class SwarmNetwork():
                     self.Adj[other_agent.id, agent.id] = 1 
             # Update agent's neightbour:
             agent.set_neightbors(temp_neightbor)
-            
+

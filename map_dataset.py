@@ -273,13 +273,13 @@ class MapDataset:
             self.map = np.load("map_3_hard.npy")
         elif file_name == "r":
             print("generate new map")
-            return self.generate_map(walls)
+            return self.generate_map(walls)[0],self.generate_map(walls)[1], file_name
         elif file_name == "rs": # generate new map and save
             print("generate new map and save")
-            return self.generate_map(walls, save =  True)
+            return self.generate_map(walls, save =  True)[0], self.generate_map(walls, save =  True)[1],file_name
         else:
             self.map = np.load(file_name)
-        return self.map, [np.where(self.map == 150)[1][0], np.where(self.map == 150)[0][0]]
+        return self.map, [np.where(self.map == 150)[1][0], np.where(self.map == 150)[0][0]], file_name
 
     def get_map(self):
         return self.map
