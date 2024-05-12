@@ -32,6 +32,7 @@ class agent:
         # Operation parameter 
         self.id = id         # Agent ID   
         self.mode = "stop"   # Operation mode (behaviour)d
+        self.alive = True
         self.N = None        # List of neighbors
 
         ################### AGENT MOTION #######################
@@ -124,57 +125,67 @@ class agent:
     ################### MAIN OPERATION FUNCTION ########################
 
     def one_step(self):
-        # 1º Read LIDAR:
-        self.lidar_scan()
-
-        # 2º Take action based on current behavior:
-        if self.mode == "random":
-            self.forward()
-
-        elif self.mode == "cluster":
-            self.cluster()
-
-        elif self.mode == "home":
-            self.homing()
-
-        elif self.mode == "dispersion":
-            self.dispersion()
-
-        elif self.mode == "explore":
-            if self.data_to_save > 5:   # If number of data discover greater than 5 come back home for updating map
-                self.homing()
-            else:
-                self.exploration()
-
-        else:   # Do nothing
-            self.stop()
-
-        if self.mode != "explore": self.desired_point = None    # Needed to reset exploration
-
-        # 3º Check collition:
-        self.avoid_collision()     
-
-        # 4º Normalize velocity vector:
-        self.norm_velocity()
-        self.low_pass_filter()  #Low-pass filter - smooth movements
-
-        # 5º Update state:
-        self.x = wrap(self.x + self.vx, self.dataset.arena_size)
-        self.y = wrap(self.y + self.vy, self.dataset.arena_size)
-        self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
-        self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
-
-        # 6º Check if close to home position:
-        if np.linalg.norm([self.x-self.home[0],self.y-self.home[1]]) < self.dataset.K:  # If smaller than block size
-            self.at_home = True
-            self.data_to_save = 0
+        if not self.alive:
+            self.x = 0
+            self.y = 0
         else:
-            self.at_home = False
+            # 1º Read LIDAR:
+            self.lidar_scan()
 
-        # Check map values:
-        self.monitoring()
-        self.update_map()
-        self.track_location()        
+            # 2º Take action based on current behavior:
+            if self.mode == "random":
+                self.forward()
+
+            elif self.mode == "cluster":
+                self.cluster()
+
+            elif self.mode == "home":
+                self.homing()
+
+            elif self.mode == "dispersion":
+                self.dispersion()
+
+            elif self.mode == "explore":
+                if self.data_to_save > 5:   # If number of data discover greater than 5 come back home for updating map
+                    self.homing()
+                else:
+                    self.exploration()
+
+            else:   # Do nothing
+                self.stop()
+
+            if self.mode != "explore": self.desired_point = None    # Needed to reset exploration
+
+            # 3º Check collition:
+            self.avoid_collision()     
+
+            # 4º Normalize velocity vector:
+            self.norm_velocity()
+            self.low_pass_filter()  #Low-pass filter - smooth movements
+
+            # 5º Update state:
+            self.x = wrap(self.x + self.vx, self.dataset.arena_size)
+            self.y = wrap(self.y + self.vy, self.dataset.arena_size)
+            self.V = np.linalg.norm([self.vx,self.vy])    # Forward velocity
+            self.yaw = np.arctan2(self.vy,self.vx)        # Agent orientation
+
+            # 6º Check if close to home position:
+            if np.linalg.norm([self.x-self.home[0],self.y-self.home[1]]) < self.dataset.K:  # If smaller than block size
+                self.at_home = True
+                self.data_to_save = 0
+            else:
+                self.at_home = False
+
+            # Check map values:
+            self.monitoring()
+            self.update_map()
+            self.track_location()      
+
+            # Random failure mode --> kill the agent randomly
+            if np.random.uniform(0,1) > 0.99995:
+                print('Dead agent ', self.id)
+                self.alive = False  
+                self.at_home = False
 
 ######################## SENSING FUNCTIONS #################################
 
@@ -521,6 +532,7 @@ class SwarmNetwork():
         # Save hyperparameters:
         self.num_agents = num_agent
         self.neightbor_space = communication_radium
+        self.num_agents_alive = num_agent
 
         #################### CREATE AGENTS #####################################
         # Set random intial point:
@@ -574,9 +586,12 @@ class SwarmNetwork():
     ########## MAIN FUNCTION ###################
     def one_step(self, mode = "stop"):
         t = time.time()
+        self.num_agents_alive = 0
         for agent in self.agents:
             agent.set_mode(mode)    # Control behavior
             agent.one_step()        # Agent main function
+
+            if agent.alive: self.num_agents_alive += 1
             
             if agent.at_home == True and abs(t - self.update_timer) > 1.5:   # If agent at home call update ground station map
                 #show = abs(t - self.init_timer) > 10
@@ -615,12 +630,13 @@ class SwarmNetwork():
 
         # Save list of agents as every agent neightbors:
         for i,agent in enumerate(self.agents):
-            temp_neightbor = []
-            for other_agent in self.agents:
-                if other_agent.id in neightbors[i]: 
-                    temp_neightbor.append(other_agent)
-                    self.Adj[agent.id, other_agent.id] = 1
-                    self.Adj[other_agent.id, agent.id] = 1 
-            # Update agent's neightbour:
-            agent.set_neightbors(temp_neightbor)
+            if agent.alive:
+                temp_neightbor = []
+                for other_agent in self.agents:
+                    if other_agent.id in neightbors[i] and other_agent.alive: 
+                        temp_neightbor.append(other_agent)
+                        self.Adj[agent.id, other_agent.id] = 1
+                        self.Adj[other_agent.id, agent.id] = 1 
+                # Update agent's neightbour:
+                agent.set_neightbors(temp_neightbor)
             

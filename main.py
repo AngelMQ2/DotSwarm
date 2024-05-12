@@ -73,6 +73,29 @@ def eval_cluster(net):
     return n_cluster
 
 
+def recursive_explore_homing(net, agent_id, visited_list):
+    # Deep-first search implementation:
+    visited_list[agent_id] = True
+
+    # Get adjacent nodes:
+    neightbors_id = np.nonzero(net.Adj[agent_id,:])[0]
+    for id in neightbors_id:
+        distance = np.linalg.norm([net.agents[agent_id].x - net.agents[id].x,net.agents[agent_id].y - net.agents[id].y])
+        if not visited_list[id] and distance < 2*SAFE_SPACE:
+            recursive_explore(net, id, visited_list)
+
+def eval_homing(net):
+    # Initialize Deep-first search:
+    n = len(net.agents)
+    home_list = [False]*n
+
+    for agent_id in range(n):
+        if not home_list[agent_id] and net.agents[agent_id].at_home:
+            recursive_explore(net, agent_id, home_list)
+            break
+    return np.count_nonzero(np.array(home_list))
+
+
 def eval_exploration(net):
     # Look at covered area in exploration:
     current_area = net.global_map.covered_area()
@@ -149,14 +172,17 @@ def animate(i):
     global privious_covered_area_ration
 
     net.one_step(mode)
-    
+    agents_alive = net.num_agents_alive
     # Evaluation
     #n_cluster = eval_cluster(net)
     #max_dispersion = eval_dispersion(net)
-    covered_area_ration = eval_exploration(net)
-    if covered_area_ration - privious_covered_area_ration != 0:
-        print('Cover area ration: ', covered_area_ration)
-        privious_covered_area_ration = covered_area_ration
+    n_agent_at_home = eval_homing(net)
+    #print('Number of agent at home: ', n_agent_at_home)
+    print('Ratio number of agent at home: ', (n_agent_at_home/agents_alive)*100)
+    #covered_area_ration = eval_exploration(net)
+    #if covered_area_ration - privious_covered_area_ration != 0:
+    #    print('Cover area ration: ', covered_area_ration)
+    #    privious_covered_area_ration = covered_area_ration
     #print('Number of cluster: ', n_cluster)
     #print('Max dispersion distance: ',max_dispersion)
 
