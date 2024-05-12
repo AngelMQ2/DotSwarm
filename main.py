@@ -21,7 +21,7 @@ NUM_RAYS          = 8
 SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 10
+NUMBER_OF_ROBOTS  = 12
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
 
 # For not printing out all coverd area all the time
@@ -216,6 +216,7 @@ ax_cl.set_ylim(0, NUMBER_OF_ROBOTS)  # Adjust ylim based on your data range
 net = SwarmNetwork(home,map_dataset,DATASET, NUMBER_OF_ROBOTS, NEIGHTBORS_SPACE, start_home=True)
 mode = "Dispersion"
 previous_mode = "Dispersion"
+print("begin")
 
 
 def init():
@@ -247,12 +248,9 @@ def animate(i):
 
     current_time=time.time()-initial_time
 
-    #when set time reached stop simulation
-    if simulation_seconds<current_time:
-        print("closing the plot now")
-        plt.close()
 
 
+    #print("after time print")
     net.one_step(mode)
 
 
@@ -306,16 +304,33 @@ def animate(i):
     p = net.state()
     x = p[:, 0]
     y = p[:, 1]
-
+    #print("hello")
     points.set_data(x, y)
     print('Step ', i + 1, '/', STEPS, end='\r')
+
+    # when set time reached stop simulation
+    if simulation_seconds < current_time:
+        # plt.close()
+        # plt.figure(1)
+        # plt.plot(time_axi, value_axi)
+        # plt.title(title)
+        # plt.xlabel('Time (s)')
+        # plt.ylabel(y_axi)
+        # plt.grid(True)
+        # plt.show()
+        date = time.gmtime()
+        file_name = "saved_plot_data/" + mode + "_" + str(NUMBER_OF_ROBOTS) + "_map_" + selected_map + f"_date_{date[2]}_{date[1]}_time_{date[3]}_{date[4]}_{date[5]}"+".npy"
+        np.save(file_name, value_axi)
+
+        plt.close()
+        quit()
+
 
     return points,
 
 fig.canvas.mpl_connect('key_press_event', toggle_mode)
 
-anim = FuncAnimation(fig, animate, init_func=init,
-                               frames=STEPS, interval=1, blit=True)
+anim = FuncAnimation(fig, animate, init_func=init, frames=STEPS, interval=1, blit=True)
 
 #anim_cl = FuncAnimation(fig_cl, animate_cluster, init_func=init_cl, frames=STEPS, interval = 1, blit=True)
 
@@ -324,12 +339,3 @@ videowriter = animation.FFMpegWriter(fps=60)
 plt.show()
 
 # Plotting the eval methods
-plt.plot(time_axi, value_axi)
-plt.title(title)
-plt.xlabel('Time (s)')
-plt.ylabel(y_axi)
-plt.grid(True)
-plt.show()
-
-file_name="saved_plot_data/"+mode+"_"+str(NUMBER_OF_ROBOTS)+"_"+selected_map+".npy"
-np.save(file_name, value_axi)
