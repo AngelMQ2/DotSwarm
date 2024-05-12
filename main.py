@@ -5,6 +5,7 @@ from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 from map_dataset import MapDataset, DataSet
 from dot_swarm import SwarmNetwork
+import time
 
 # Environmen hyperparam:
 ARENA_SIDE_LENGTH = 100
@@ -20,20 +21,44 @@ NUM_RAYS          = 8
 SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 20
+NUMBER_OF_ROBOTS  = 10
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
 
 # For not printing out all coverd area all the time
 global privious_covered_area_ration
 privious_covered_area_ration = 0
 
+#TIMER VARIABLES
+global timer_reset # Boolean variable for reseting clock each time new behavior is selected
+timer_reset=False
+
+initial_time=time.time()
+final_time=5000000
+
+simulation_seconds=10
+
+#PLOT VARIABLES
+
+time_axi=[]
+value_axi=[]
+title=""
+y_axi=""
+
 # Control behavior with the keys:
 def toggle_mode(event):
+    global timer_reset
+    timer_reset=True
+
+    global title
+    global y_axi
+
     global mode, previous_mode
     if event.key == 'up':
         mode = "random"
     elif event.key == 'down':
         mode = "cluster"
+        title="Cluster Evaluation"
+        y_axi="Nº of Clusters"
     elif event.key == ' ':
         if mode == "stop":
             mode = previous_mode
@@ -42,10 +67,16 @@ def toggle_mode(event):
             mode = "stop"
     elif event.key == 'enter':
         mode = "home"
+        title="Homing Evaluation"
+        y_axi="Add y axis here"
     elif event.key == 'right':
         mode = "explore"
+        title="Exploration Evaluation"
+        y_axi="Covered Area"
     elif event.key == 'left':
         mode = "dispersion"
+        title="Dispersion Evaluation"
+        y_axi="Covered Area (map cells)"
 
 
 def recursive_explore(net, agent_id, visited_list):
@@ -113,32 +144,57 @@ def get_centroid(net):
 
     return centroid_x,centroid_y
 
+#gets the sorrunding cells taking into account map limits and walls
+def get_surrounding_cells(i, j, max_size,occupied_cells):
+    # Define the range of j and i coordinates for the surrounding cells
+    x_range = range(max(0, i - 1), min(max_size, i + 2))
+    y_range = range(max(0, j - 1), min(max_size, j + 2))
+
+    
+    for ii in x_range:
+        for jj in y_range:
+            # Skip the current cell, checks for the map borders
+            if ii == i and jj == j:
+                continue
+            # Skip the current cell, checks for the map walls
+            if not DATASET.info[jj][ii].reacheable:
+                continue
+            occupied_cells.append([ii, jj])
+    
+    return occupied_cells
+
 def eval_dispersion(net):
-    max_distance = -1
+    occupied_cells = []
+    map_size_limit=int(ARENA_SIDE_LENGTH/BLOCK_SIZE)
 
     # Compute swarm centroid
-    centroid_x,centroid_y=get_centroid(net)
     p = net.state()
     x = p[:, 0]
     y = p[:, 1]
 
-    # Get further agent to centroid
-    for i in range(len(x)):
-        distance = np.linalg.norm([x[i]-centroid_x,y[i]-centroid_y])
-        if distance > max_distance:
-            max_distance = distance
-        
-    return max_distance
+    # adds curretnt and sorrounding cells to occupied_cells
+    for w in range(len(x)-1):
+        i,j=DATASET.index(x[w],y[w])
+        get_surrounding_cells(i,j,map_size_limit,occupied_cells)
+        occupied_cells.append([i,j])
+
+    # Convert into touples to be able ot use np.unique, if not will count numbers but not pairs of numbers
+    pair_tuples = [tuple(pair) for pair in occupied_cells]
+    unique_occupied_cells=np.unique(pair_tuples,axis=0)
+
+    print("Ocuppied cells:"+str(len(occupied_cells))+" UniqueOnes:"+str(len(unique_occupied_cells)))
+    
+    return len(unique_occupied_cells)
 
 
 
 # Create Map:
 map_dataset = MapDataset(ARENA_SIDE_LENGTH, BLOCK_SIZE)
-BW_MAP,home = map_dataset.load_map(walls=WALLS_ON)
+BW_MAP,home,selected_map = map_dataset.load_map(walls=WALLS_ON)
 
 # Generate random dataset --> Map discretization with value that agent may infer
 DATASET = DataSet(map_dataset)
-DATASET.plot_info()
+#DATASET.plot_info()
 
 
 # The agent operate with map and dataset variables to simulate the exploration and data adqusition task.
@@ -158,8 +214,8 @@ ax_cl.set_ylim(0, NUMBER_OF_ROBOTS)  # Adjust ylim based on your data range
 
 # Create swarm:
 net = SwarmNetwork(home,map_dataset,DATASET, NUMBER_OF_ROBOTS, NEIGHTBORS_SPACE, start_home=True)
-mode = "dispersion"
-previous_mode = "dispersion"
+mode = "Dispersion"
+previous_mode = "Dispersion"
 
 
 def init():
@@ -167,22 +223,79 @@ def init():
     return points,
 
 
-
 def animate(i):
+    #timer variables
+    global simulation_seconds
+    global timer_reset
+    global final_time
+    global initial_time
+
+    #plotting arrays
+    global time_axi
+    global value_axi
+
+    global mode
     global privious_covered_area_ration
 
+    net.delete_agent()
+
+    #reset timer each time the behavior is changed
+    if timer_reset:
+        initial_time=time.time()
+        timer_reset=False
+        time_axi=[]
+        value_axi=[]
+
+    current_time=time.time()-initial_time
+
+    #when set time reached stop simulation
+    if simulation_seconds<current_time:
+        plt.close()
+
+
     net.one_step(mode)
-    agents_alive = net.num_agents_alive
+
+
     # Evaluation
     #n_cluster = eval_cluster(net)
     #max_dispersion = eval_dispersion(net)
-    n_agent_at_home = eval_homing(net)
+
     #print('Number of agent at home: ', n_agent_at_home)
-    print('Ratio number of agent at home: ', (n_agent_at_home/agents_alive)*100)
+
     #covered_area_ration = eval_exploration(net)
     #if covered_area_ration - privious_covered_area_ration != 0:
     #    print('Cover area ration: ', covered_area_ration)
     #    privious_covered_area_ration = covered_area_ration
+
+    #call diferent evaluation methods
+    if mode=="dispersion":
+        cells_ocupied=eval_dispersion(net)
+        time_axi.append(current_time)
+        value_axi.append(cells_ocupied)
+
+    elif mode=="home":
+        agents_alive = net.num_agents_alive
+        ratio_agent_at_home = eval_homing(net)/agents_alive
+        time_axi.append(current_time)
+        value_axi.append(ratio_agent_at_home)
+
+        print('Ratio number of agent at home: ', (ratio_agent_at_home / agents_alive) * 100)
+
+    elif mode=="cluster":
+        n_cluster = eval_cluster(net)
+        time_axi.append(current_time)
+        value_axi.append(n_cluster)
+
+    elif mode=="explore":
+        covered_area_ration = eval_exploration(net)
+        if covered_area_ration - privious_covered_area_ration != 0:
+            time_axi.append(current_time)
+            value_axi.append(covered_area_ration)
+            #print('Cover area ration: ', covered_area_ration)
+            privious_covered_area_ration = covered_area_ration
+
+        
+
     #print('Number of cluster: ', n_cluster)
     #print('Max dispersion distance: ',max_dispersion)
 
@@ -209,3 +322,14 @@ anim = FuncAnimation(fig, animate, init_func=init,
 videowriter = animation.FFMpegWriter(fps=60)
 #anim.save("..\output.mp4", writer=videowriter)
 plt.show()
+
+# Plotting the eval methods
+plt.plot(time_axi, value_axi)
+plt.title(title)
+plt.xlabel('Time (s)')
+plt.ylabel(y_axi)
+plt.grid(True)
+plt.show()
+
+file_name="saved_plot_data/"+mode+"_"+str(NUMBER_OF_ROBOTS)+"_"+selected_map+".npy"
+np.save(file_name, value_axi)

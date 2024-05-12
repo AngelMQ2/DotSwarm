@@ -6,6 +6,8 @@ from matplotlib.animation import FuncAnimation
 from map_dataset import MapDataset, DataSet
 import time
 from queue import PriorityQueue
+import random
+
 
 # Environmen hyperparam:
 #ARENA_SIDE_LENGTH = 100
