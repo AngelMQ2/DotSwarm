@@ -286,11 +286,11 @@ class agent:
         [x,y] = self.position()
 
 
-        if self.path_to_home: # Check if self.path_to_home is empty
+        if self.path_to_home != []: # Check if self.path_to_home is empty
 
             next_centroid = self.path_to_home[0]
 
-            if np.linalg.norm([self.x-next_centroid[0],self.y-next_centroid[1]]) < 2 and self.path_to_home != []:  # If smaller than block size
+            if np.linalg.norm([self.x-next_centroid[0],self.y-next_centroid[1]]) < 3 and self.path_to_home != []:  # If smaller than block size
                 self.path_to_home.pop(0)
                 next_centroid = self.path_to_home[0]
         
@@ -490,9 +490,9 @@ class agent:
 
                     info = self.dataset.get_info(i,j)
                     if info.reacheable:
-                        next_centroid = (info.centroid[1], info.centroid[0]) # TODO: Maybe it has to be turned around  
+                        next_centroid = (info.centroid[1], info.centroid[0])
 
-                        temp_g_score = g_score[curr_centroid] + 5 # TODO: Maybe +1 or something
+                        temp_g_score = g_score[curr_centroid] + 4 # TODO: Maybe +1 or something
                         temp_f_score = temp_g_score + self.manhatten_norm(next_centroid, goal)
 
 
