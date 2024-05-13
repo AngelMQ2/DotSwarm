@@ -21,7 +21,7 @@ NUM_RAYS          = 8
 SAFE_SPACE        = 2            # Self safe-space, avoid collitions
 
 # Swarm hyperparameters:
-NUMBER_OF_ROBOTS  = 12
+NUMBER_OF_ROBOTS  = 20
 NEIGHTBORS_SPACE  = 20      # Radius of communication area
 
 # For not printing out all coverd area all the time
@@ -35,7 +35,7 @@ timer_reset=False
 initial_time=time.time()
 final_time=5000000
 
-simulation_seconds=10
+simulation_seconds=60
 
 #PLOT VARIABLES
 
@@ -213,7 +213,7 @@ ax_cl.set_ylim(0, NUMBER_OF_ROBOTS)  # Adjust ylim based on your data range
 #cl_plot, = ax_cl.plot([], [], lw=2)
 
 # Create swarm:
-net = SwarmNetwork(home,map_dataset,DATASET, NUMBER_OF_ROBOTS, NEIGHTBORS_SPACE, start_home=True)
+net = SwarmNetwork(home,map_dataset,DATASET, NUMBER_OF_ROBOTS, NEIGHTBORS_SPACE, start_home=False)
 mode = "Dispersion"
 previous_mode = "Dispersion"
 print("begin")
@@ -319,7 +319,7 @@ def animate(i):
         # plt.grid(True)
         # plt.show()
         date = time.gmtime()
-        file_name = "saved_plot_data/" + mode + "_" + str(NUMBER_OF_ROBOTS) + "_map_" + selected_map + f"_date_{date[2]}_{date[1]}_time_{date[3]}_{date[4]}_{date[5]}"+".npy"
+        file_name = "saved_plot_data/" + mode + "_" + str(NUMBER_OF_ROBOTS) + "_"+selected_map+".npy"
         np.save(file_name, value_axi)
 
         plt.close()
